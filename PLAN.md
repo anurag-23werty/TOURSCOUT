@@ -39,7 +39,8 @@ Qloo hackathon keys are issued **manually by email and can take a few business d
 ## Phase 1: Understand Qloo's data (Day 2–3)
 The goal is to *know* the data before designing prompts around it. Invalid params are silently ignored, so verify everything.
 
-- [ ] Manually explore `/search`, `/v2/tags`, `/v2/insights` for `destination` and `place` (Postman/Bruno collection, committed without responses).
+- [x] Exploration tooling: `scripts/check_keys.py`, `scripts/qloo_explore.py` (search · tags · insights · shape · hypothesis · probe · coverage). Steps in `docs/phase1-runbook.md`.
+- [ ] Run the runbook against the real API once the key arrives.
 - [ ] Answer and document in `docs/qloo-notes.md`:
   - Which signals/filters actually change results for `destination` vs `place`?
   - How do location filters behave (city name vs coordinates/radius)? Which place categories/tags exist (restaurant, café, bar, museum, hotel)?

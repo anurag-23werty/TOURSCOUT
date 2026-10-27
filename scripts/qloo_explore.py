@@ -2,17 +2,21 @@
 # requires-python = ">=3.12"
 # dependencies = ["httpx>=0.27", "python-dotenv>=1.0"]
 # ///
-"""Phase 1: explore the Qloo API and answer the open questions in docs/qloo-notes.md.
+"""Phase 1: explore the Qloo API for tour planning and answer the open questions in docs/qloo-notes.md.
 
 Usage (from the repo root):
-  uv run scripts/qloo_explore.py search "Arctic Monkeys" --types urn:entity:artist
-  uv run scripts/qloo_explore.py tags coffee
-  uv run scripts/qloo_explore.py insights filter.type=urn:entity:destination signal.interests.entities=<id>
-  uv run scripts/qloo_explore.py shape filter.type=urn:entity:place filter.location.query=Tokyo
-  uv run scripts/qloo_explore.py hypothesis      # do different tastes give different destinations?
-  uv run scripts/qloo_explore.py probe place     # which params actually change results (or are silently ignored)?
-  uv run scripts/qloo_explore.py probe destination
-  uv run scripts/qloo_explore.py coverage        # how much place data per city?
+  uv run scripts/qloo_explore.py search "Hovvdy" --types urn:entity:artist
+  uv run scripts/qloo_explore.py tags "record store"
+  uv run scripts/qloo_explore.py insights filter.type=urn:entity:brand signal.interests.entities=<id>
+  uv run scripts/qloo_explore.py shape filter.type=urn:heatmap signal.interests.entities=<id> filter.location.query=Texas
+  uv run scripts/qloo_explore.py heatmap "Men I Trust" "United States"   # top demand cells
+  uv run scripts/qloo_explore.py openers "Men I Trust" Chicago            # local acts smaller than the headliner
+  uv run scripts/qloo_explore.py venues "Men I Trust" Chicago
+  uv run scripts/qloo_explore.py sponsors "Men I Trust" --city Chicago
+  uv run scripts/qloo_explore.py hypothesis      # do different artists get different demand maps?
+  uv run scripts/qloo_explore.py probe openers   # which params change results (or are silently ignored)?
+  uv run scripts/qloo_explore.py probe venues | probe sponsors | probe heatmap
+  uv run scripts/qloo_explore.py coverage        # venue + opener data per city
 
 Add --no-cache to force fresh calls. Raw responses are cached in qloo_responses/ (git-ignored).
 """
@@ -24,17 +28,16 @@ import itertools
 from collections import Counter
 from typing import Any
 
-from _qloo import Qloo, QlooResponse, affinity, ids, item_id, jaccard, key_paths, lat_lon
+from _qloo import Qloo, QlooResponse, affinity, ids, item_id, jaccard, key_paths, lat_lon, popularity
 
-# Hand-resolved test tastes (no LLM in Phase 1). Search types use /search naming: note "videogame" there vs "video_game" in insights.
-PERSONAS: dict[str, list[tuple[str, str]]] = {
-    "film-indie": [("Interstellar", "urn:entity:movie"), ("Arctic Monkeys", "urn:entity:artist"), ("Muji", "urn:entity:brand")],
-    "foodie": [("Parts Unknown", "urn:entity:tv_show"), ("The Bear", "urn:entity:tv_show"), ("Anthony Bourdain", "urn:entity:person")],
-    "techno": [("Kraftwerk", "urn:entity:artist"), ("Daft Punk", "urn:entity:artist"), ("Berghain", "urn:entity:place")],
-    "heritage": [("Pride and Prejudice", "urn:entity:book"), ("Bridgerton", "urn:entity:tv_show"), ("Ludovico Einaudi", "urn:entity:artist")],
-}
+VENUE_TAGS = ["urn:tag:category:place:live_music_venue", "urn:tag:setting:qloo:music_venue"]
+OPENER_LOCATION_WEIGHT = 25
+OPENER_POPULARITY_MARGIN = 0.05
 
-COVERAGE_CITIES = ["Tokyo", "Lisbon", "New York City", "Mexico City", "Bengaluru", "Goa", "Jaipur", "Ulaanbaatar"]
+# Contrasting artists for the hypothesis test (all verified on Qloo).
+HYPOTHESIS_ARTISTS = ["Men I Trust", "Thee Sacred Souls", "Ed Maverick", "Pinegrove"]
+HYPOTHESIS_REGION = "United States"
+COVERAGE_CITIES = ["Chicago", "Columbus", "Madison", "Austin", "London", "Berlin", "Mumbai", "Bengaluru"]
 
 
 # ---------- printing ----------
@@ -47,11 +50,12 @@ def print_items(resp: QlooResponse, limit: int = 10) -> None:
     items = resp.items()
     print(f"  ✓ {status} · {len(items)} results")
     for i, item in enumerate(items[:limit], 1):
-        aff = affinity(item)
-        loc = lat_lon(item)
-        types = item.get("types") or item.get("type") or ""
-        extras = [f"aff={aff:.3f}" if isinstance(aff, (int, float)) else "", f"@{loc[0]:.3f},{loc[1]:.3f}" if loc else ""]
-        print(f"  {i:>2}. {item.get('name', '?'):<40} {str(item_id(item))[:12]:<12} {str(types)[:40]:<40} {' '.join(e for e in extras if e)}")
+        aff, pop, loc = affinity(item), popularity(item), lat_lon(item)
+        label = item.get("name") or (item.get("location") or {}).get("geohash") or "?"
+        extras = [f"aff={aff:.3f}" if isinstance(aff, (int, float)) else "",
+                  f"pop={pop:.3f}" if isinstance(pop, (int, float)) else "",
+                  f"@{loc[0]:.3f},{loc[1]:.3f}" if loc else ""]
+        print(f"  {i:>2}. {str(label)[:40]:<40} {str(item_id(item) or '')[:12]:<12} {' '.join(e for e in extras if e)}")
 
 
 def print_table(headers: list[str], rows: list[list[Any]]) -> None:
@@ -72,24 +76,49 @@ def parse_kv(pairs: list[str]) -> dict[str, str]:
 
 # ---------- building blocks ----------
 
-def resolve(q: Qloo, name: str, type_urn: str) -> str | None:
-    resp = q.get("/search", {"query": name, "types": type_urn, "take": 1})
-    found = ids(resp)
-    marker = f"→ {resp.items()[0].get('name')} ({found[0][:12]})" if found else f"→ NOT FOUND ({resp.status} {resp.message})"
-    print(f"    resolve {name!r} [{type_urn.split(':')[-1]}] {marker}")
-    return found[0] if found else None
+def resolve_artist(q: Qloo, name: str) -> dict[str, Any] | None:
+    resp = q.get("/search", {"query": name, "types": "urn:entity:artist", "take": 1})
+    items = resp.items()
+    if not items:
+        print(f"    resolve {name!r} → NOT FOUND ({resp.status} {resp.message})")
+        return None
+    artist = items[0]
+    warn = "" if artist.get("name", "").lower() == name.lower() else "  ⚠️ different name: confirm with the user"
+    print(f"    resolve {name!r} → {artist.get('name')} ({artist.get('entity_id', '')[:12]}) pop={artist.get('popularity') or 0:.3f}{warn}")
+    return artist
 
 
-def resolve_persona(q: Qloo, persona: str) -> list[str]:
-    print(f"  persona {persona}:")
-    return [i for i in (resolve(q, n, t) for n, t in PERSONAS[persona]) if i]
+def require_artist(q: Qloo, name: str) -> dict[str, Any]:
+    artist = resolve_artist(q, name)
+    if not artist:
+        raise SystemExit(f"{name!r} is not on Qloo; use the sounds-like path with similar artists.")
+    return artist
 
 
-def first_tag_id(q: Qloo, query: str) -> str | None:
-    resp = q.get("/v2/tags", {"filter.query": query, "take": 5})
-    found = ids(resp)
-    print(f"    tag {query!r} → {found[0] if found else f'NOT FOUND ({resp.status} {resp.message})'}")
-    return found[0] if found else None
+def heatmap_params(artist_id: str, region: str) -> dict[str, Any]:
+    return {"filter.type": "urn:heatmap", "signal.interests.entities": artist_id, "filter.location.query": region}
+
+
+def opener_params(artist: dict[str, Any], city: str, take: int = 10) -> dict[str, Any]:
+    cap = max((artist.get("popularity") or 1.0) - OPENER_POPULARITY_MARGIN, 0.0)
+    return {"filter.type": "urn:entity:artist", "signal.interests.entities": artist["entity_id"],
+            "signal.location.query": city, "signal.location.weight": OPENER_LOCATION_WEIGHT,
+            "filter.popularity.max": round(cap, 3), "filter.exclude.entities": artist["entity_id"], "take": take}
+
+
+def venue_params(artist_id: str, city: str, tag: str, take: int = 10) -> dict[str, Any]:
+    return {"filter.type": "urn:entity:place", "filter.location.query": city, "filter.tags": tag,
+            "signal.interests.entities": artist_id, "take": take}
+
+
+def sponsor_params(artist_id: str, city: str | None, take: int = 10) -> dict[str, Any]:
+    return {"filter.type": "urn:entity:brand", "signal.interests.entities": artist_id,
+            "signal.location.query": city, "take": take}
+
+
+def demand_ranked_cells(resp: QlooResponse) -> list[dict[str, Any]]:
+    """Rank cells by affinity weighted by popularity: affinity alone favours tiny, empty cells."""
+    return sorted(resp.items(), key=lambda c: (affinity(c) or 0) * (popularity(c) or 0), reverse=True)
 
 
 # ---------- commands ----------
@@ -107,7 +136,7 @@ def cmd_insights(q: Qloo, args: argparse.Namespace) -> None:
 
 
 def cmd_shape(q: Qloo, args: argparse.Namespace) -> None:
-    """Which fields appear on result items, and how often (answers: do places have lat/lng, price, images, tags?)."""
+    """Which fields appear on result items, and how often."""
     resp = q.get(args.path, parse_kv(args.params))
     print_items(resp, 3)
     items = resp.items()
@@ -119,20 +148,62 @@ def cmd_shape(q: Qloo, args: argparse.Namespace) -> None:
         print(f"  {100 * n // len(items):>4}%  {path}")
 
 
-def cmd_hypothesis(q: Qloo, args: argparse.Namespace) -> None:
-    """Core bet of the project: contrasting tastes must give clearly different destinations."""
-    tops: dict[str, list[str]] = {}
-    for persona in PERSONAS:
-        entity_ids = resolve_persona(q, persona)
-        resp = q.get("/v2/insights", {"filter.type": "urn:entity:destination", "signal.interests.entities": entity_ids, "take": 10})
-        print_items(resp, 10)
-        tops[persona] = ids(resp)
+def cmd_heatmap(q: Qloo, args: argparse.Namespace) -> None:
+    artist = require_artist(q, args.artist)
+    resp = q.get("/v2/insights", heatmap_params(artist["entity_id"], args.region))
+    if not resp.ok:
+        print_items(resp)
+        return
+    ranked = demand_ranked_cells(resp)
+    print(f"  {len(ranked)} cells in {resp.seconds}s; top {args.take} by affinity × popularity:")
+    rows = [[i, (c.get("location") or {}).get("geohash"), f"{lat_lon(c)[0]:.2f},{lat_lon(c)[1]:.2f}" if lat_lon(c) else "-",
+             f"{affinity(c) or 0:.3f}", f"{popularity(c) or 0:.3f}"] for i, c in enumerate(ranked[:args.take], 1)]
+    print_table(["#", "geohash", "lat,lon", "affinity", "popularity"], rows)
+    print("  (paste lat,lon into a map to sanity-check; city mapping comes in Phase 2 via GeoNames)")
 
-    print("\n  pairwise overlap of top-10 destinations (Jaccard, lower = more personalised):")
+
+def cmd_openers(q: Qloo, args: argparse.Namespace) -> None:
+    artist = require_artist(q, args.artist)
+    params = opener_params(artist, args.city, args.take)
+    print(f"  popularity cap {params['filter.popularity.max']} (headliner − {OPENER_POPULARITY_MARGIN}), location weight {OPENER_LOCATION_WEIGHT}")
+    print_items(q.get("/v2/insights", params), args.take)
+
+
+def cmd_venues(q: Qloo, args: argparse.Namespace) -> None:
+    artist = require_artist(q, args.artist)
+    for tag in VENUE_TAGS:
+        print(f"  tag {tag}:")
+        print_items(q.get("/v2/insights", venue_params(artist["entity_id"], args.city, tag, args.take)), args.take)
+
+
+def cmd_sponsors(q: Qloo, args: argparse.Namespace) -> None:
+    artist = require_artist(q, args.artist)
+    national = q.get("/v2/insights", sponsor_params(artist["entity_id"], None, args.take))
+    print("  national:")
+    print_items(national, args.take)
+    if args.city:
+        local = q.get("/v2/insights", sponsor_params(artist["entity_id"], args.city, args.take))
+        print(f"  {args.city}:")
+        print_items(local, args.take)
+        new = [i.get("name") for i in local.items() if item_id(i) not in set(ids(national))]
+        print(f"  new in {args.city} vs national: {', '.join(n for n in new if n) or 'none'}")
+
+
+def cmd_hypothesis(q: Qloo, args: argparse.Namespace) -> None:
+    """Core bet: different artists must get clearly different demand maps (not just 'big cities')."""
+    tops: dict[str, list[str]] = {}
+    for name in HYPOTHESIS_ARTISTS:
+        artist = require_artist(q, name)
+        resp = q.get("/v2/insights", heatmap_params(artist["entity_id"], HYPOTHESIS_REGION))
+        cells = demand_ranked_cells(resp)[:25]
+        tops[name] = [(c.get("location") or {}).get("geohash") for c in cells]
+        print(f"    {name}: {len(resp.items())} cells, top-25 kept")
+
+    print(f"\n  pairwise overlap of top-25 demand cells in {HYPOTHESIS_REGION} (Jaccard, lower = more artist-specific):")
     rows = [[a, b, jaccard(tops[a], tops[b])] for a, b in itertools.combinations(tops, 2)]
-    print_table(["persona A", "persona B", "overlap"], rows)
+    print_table(["artist A", "artist B", "overlap"], rows)
     mean = sum(r[2] for r in rows) / len(rows)
-    verdict = "PASS: taste drives destinations" if mean < 0.5 else "FAIL: results look popularity-driven; rethink signals"
+    verdict = "PASS: demand is artist-specific" if mean < 0.5 else "FAIL: maps look population-driven; reweight affinity vs popularity"
     print(f"\n  mean overlap {mean:.2f} → {verdict}")
 
 
@@ -143,7 +214,7 @@ def run_probe(q: Qloo, base: dict[str, Any], variants: list[tuple[str, dict[str,
     print_items(base_resp, 5)
     if not base_resp.ok:
         return
-    base_ids = ids(base_resp)
+    base_ids = ids(base_resp) or [str(lat_lon(c)) for c in base_resp.items()]
     base_fields = set().union(*(key_paths(i) for i in base_resp.items())) if base_resp.items() else set()
 
     rows = []
@@ -158,7 +229,7 @@ def run_probe(q: Qloo, base: dict[str, Any], variants: list[tuple[str, dict[str,
         if not resp.ok:
             rows.append([label, f"ERROR {resp.status}", "-", "-", resp.message[:50], resp.seconds])
             continue
-        new_ids = ids(resp)
+        new_ids = ids(resp) or [str(lat_lon(c)) for c in resp.items()]
         new_fields = set().union(*(key_paths(i) for i in resp.items())) - base_fields if resp.items() else set()
         if not new_ids:
             verdict = "EMPTY"
@@ -170,50 +241,66 @@ def run_probe(q: Qloo, base: dict[str, Any], variants: list[tuple[str, dict[str,
 
     print()
     print_table(["variant", "verdict", "overlap", "n", "new fields", "secs"], rows)
-    print("\n  IGNORED? = same results in same order: param likely invalid for this type (or no effect). Record findings in docs/qloo-notes.md.")
+    print("\n  IGNORED? = same results in same order: param likely invalid for this type. Record in docs/qloo-notes.md.")
 
 
 def cmd_probe(q: Qloo, args: argparse.Namespace) -> None:
-    entity_ids = resolve_persona(q, "film-indie")
-    common: list[tuple[str, dict[str, Any]]] = [
-        ("no taste signal", {"signal.interests.entities": None}),
-        ("explainability on", {"feature.explainability": "true"}),
-        ("bias.trends=medium", {"bias.trends": "medium"}),
-        ("popularity.min=0.5", {"filter.popularity.min": "0.5"}),
-        ("demographics age", {"signal.demographics.age": "35_and_younger"}),
-    ]
+    artist = require_artist(q, "Men I Trust")
+    aid = artist["entity_id"]
+    explain = ("explainability on", {"feature.explainability": "true"})
 
-    if args.target == "destination":
-        base = {"filter.type": "urn:entity:destination", "signal.interests.entities": entity_ids, "take": 10}
-        variants = common + [
-            ("country_code=JP", {"filter.geocode.country_code": "JP"}),
-            ("near Bengaluru", {"signal.location.query": "Bengaluru"}),
+    if args.target == "openers":
+        base = opener_params(artist, "Chicago")
+        variants = [
+            ("no location signal", {"signal.location.query": None, "signal.location.weight": None}),
+            ("location weight default", {"signal.location.weight": None}),
+            ("no popularity cap", {"filter.popularity.max": None}),
+            ("no exclude headliner", {"filter.exclude.entities": None}),
+            ("filter.location instead", {"signal.location.query": None, "signal.location.weight": None, "filter.location.query": "Chicago"}),
+            ("signal.location.radius=30000", {"signal.location.radius": "30000"}),
+            ("genre tag indie", {"signal.interests.tags": "urn:tag:genre:music:indie"}),
+            explain,
+        ]
+    elif args.target == "venues":
+        base = venue_params(aid, "Chicago", VENUE_TAGS[0], 15)
+        variants = [
+            ("no artist signal", {"signal.interests.entities": None}),
+            ("setting:music_venue tag", {"filter.tags": VENUE_TAGS[1]}),
+            ("rating.min=4.3", {"filter.properties.business_rating.min": "4.3"}),
+            ("popularity.max=0.95", {"filter.popularity.max": "0.95"}),
+            ("radius=5000", {"filter.location.radius": "5000"}),
+            explain,
+        ]
+    elif args.target == "sponsors":
+        base = sponsor_params(aid, None, 15)
+        variants = [
+            ("Chicago signal", {"signal.location.query": "Chicago"}),
+            ("Austin signal", {"signal.location.query": "Austin"}),
+            ("age 35_and_younger", {"signal.demographics.age": "35_and_younger"}),
+            ("bias.trends=medium", {"bias.trends": "medium"}),
+            explain,
         ]
     else:
-        coffee = first_tag_id(q, "coffee")
-        base = {"filter.type": "urn:entity:place", "filter.location.query": "Tokyo", "signal.interests.entities": entity_ids, "take": 20}
-        variants = common + [
-            ("radius=2000", {"filter.location.radius": "2000"}),
-            *([("tag: coffee", {"filter.tags": coffee})] if coffee else []),
-            ("price_level.min=3", {"filter.price_level.min": "3"}),
-            ("tripadvisor.rating.min=4", {"filter.external.tripadvisor.rating.min": "4"}),
-            ("lat,lon instead of query", {"filter.location.query": None, "filter.location": "35.6595,139.7005"}),
+        base = heatmap_params(aid, "Texas")
+        variants = [
+            ("no artist signal", {"signal.interests.entities": None}),
+            ("region Illinois", {"filter.location.query": "Illinois"}),
+            ("age 35_and_younger", {"signal.demographics.age": "35_and_younger"}),
         ]
     run_probe(q, base, variants)
 
 
 def cmd_coverage(q: Qloo, args: argparse.Namespace) -> None:
-    entity_ids = resolve_persona(q, "film-indie")
+    artist = require_artist(q, args.artist)
     rows = []
     for city in args.cities or COVERAGE_CITIES:
-        resp = q.get("/v2/insights", {"filter.type": "urn:entity:place", "filter.location.query": city,
-                                      "signal.interests.entities": entity_ids, "take": 50})
-        items = resp.items()
-        with_loc = sum(1 for i in items if lat_lon(i))
-        top_tags = Counter(t.get("name") for i in items for t in (i.get("tags") or [])[:3] if isinstance(t, dict))
-        rows.append([city, resp.status, len(items), f"{100 * with_loc // max(len(items), 1)}%", resp.seconds,
-                     ", ".join(n for n, _ in top_tags.most_common(3) if n)[:45]])
-    print_table(["city", "status", "places", "with lat/lon", "secs", "common tags"], rows)
+        venues = q.get("/v2/insights", venue_params(artist["entity_id"], city, VENUE_TAGS[0], 30))
+        openers = q.get("/v2/insights", opener_params(artist, city, 10))
+        top_venue = (venues.items() or [{}])[0].get("name", "-")
+        top_opener = (openers.items() or [{}])[0].get("name", "-")
+        rows.append([city, len(venues.items()), str(top_venue)[:28], len(openers.items()), str(top_opener)[:24],
+                     round(venues.seconds + openers.seconds, 2)])
+    print_table(["city", "venues", "top venue", "openers", "top opener", "secs"], rows)
 
 
 def main() -> None:
@@ -223,7 +310,7 @@ def main() -> None:
 
     p = sub.add_parser("search", help="name → entity IDs")
     p.add_argument("query")
-    p.add_argument("--types", help="e.g. urn:entity:movie,urn:entity:tv_show")
+    p.add_argument("--types", help="e.g. urn:entity:artist")
     p.add_argument("--take", type=int, default=5)
     p.set_defaults(func=cmd_search)
 
@@ -243,14 +330,35 @@ def main() -> None:
     p.add_argument("--path", default="/v2/insights")
     p.set_defaults(func=cmd_shape)
 
-    sub.add_parser("hypothesis", help="do tastes change destinations?").set_defaults(func=cmd_hypothesis)
+    p = sub.add_parser("heatmap", help="top demand cells for an artist in a region")
+    p.add_argument("artist")
+    p.add_argument("region")
+    p.add_argument("--take", type=int, default=20)
+    p.set_defaults(func=cmd_heatmap)
+
+    for name, func, helptext in [("openers", cmd_openers, "local acts smaller than the headliner"),
+                                 ("venues", cmd_venues, "live-music venues by audience fit")]:
+        p = sub.add_parser(name, help=helptext)
+        p.add_argument("artist")
+        p.add_argument("city")
+        p.add_argument("--take", type=int, default=10)
+        p.set_defaults(func=func)
+
+    p = sub.add_parser("sponsors", help="brands the artist's fans love (national and per city)")
+    p.add_argument("artist")
+    p.add_argument("--city")
+    p.add_argument("--take", type=int, default=10)
+    p.set_defaults(func=cmd_sponsors)
+
+    sub.add_parser("hypothesis", help="do different artists get different demand maps?").set_defaults(func=cmd_hypothesis)
 
     p = sub.add_parser("probe", help="which params change results")
-    p.add_argument("target", choices=["destination", "place"])
+    p.add_argument("target", choices=["openers", "venues", "sponsors", "heatmap"])
     p.set_defaults(func=cmd_probe)
 
-    p = sub.add_parser("coverage", help="place data per city")
+    p = sub.add_parser("coverage", help="venue + opener data per city")
     p.add_argument("cities", nargs="*")
+    p.add_argument("--artist", default="Men I Trust")
     p.set_defaults(func=cmd_coverage)
 
     args = parser.parse_args()

@@ -127,10 +127,21 @@ def affinity(item: dict[str, Any]) -> float | None:
 
 
 def lat_lon(item: dict[str, Any]) -> tuple[float, float] | None:
+    """Entities use location.lat/lon; heatmap cells use location.latitude/longitude."""
     loc = item.get("location")
-    if isinstance(loc, dict) and loc.get("lat") is not None:
-        return loc["lat"], loc.get("lon", loc.get("lng"))
-    return None
+    if not isinstance(loc, dict):
+        return None
+    lat = loc.get("lat", loc.get("latitude"))
+    lon = loc.get("lon", loc.get("longitude"))
+    return (lat, lon) if lat is not None and lon is not None else None
+
+
+def popularity(item: dict[str, Any]) -> float | None:
+    """Entities carry top-level popularity; heatmap cells carry it under query."""
+    if isinstance(item.get("popularity"), (int, float)):
+        return item["popularity"]
+    query = item.get("query")
+    return query.get("popularity") if isinstance(query, dict) else None
 
 
 def key_paths(obj: Any, prefix: str = "") -> set[str]:

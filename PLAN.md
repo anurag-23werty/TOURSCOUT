@@ -1,173 +1,213 @@
-# TourScout: Build Plan (Phase 0 → Submission)
+# TourScout: Build Plan
 
-> **Hackathon:** Qloo LLM Hackathon (Devpost). Build an *agent* whose recommendations are grounded in Qloo's taste graph.
-> **Submission needs:** live hosted demo (end-to-end, public), public repo with all source + run instructions,
-> text description of what makes it Qloo-powered, OSS license visible in the repo's About section. No video required.
-> **Architecture:** see `ARCHITECTURE.md`.
-
----
-
-## The pitch
-
-**TourScout is a travel agent that knows what you (and your friends) actually love.**
-Tell it your movies, music, food, brands, or drop a few photos. It finds destinations and places through Qloo's
-taste graph, plans the trip, and explains every pick from real affinity data.
-
-**The "only works because of Qloo" moment: group trips.**
-Four friends with completely different tastes → TourScout blends their Qloo profiles and finds the city, cafés and
-nights out that score well for *everyone*, with a per-person match bar. An LLM alone can only guess here. Qloo has the data.
-
-**Proof, not claims:** a built-in *LLM-only vs TourScout* compare mode, plus an eval report in the README.
+> **Hackathon:** Qloo LLM Hackathon (Devpost). Build an *agent* whose output only works because of Qloo's taste graph.
+> **Submit:** live hosted demo (end-to-end, public, no login), public repo with all source + instructions, a text
+> description of what makes it Qloo-powered, an OSS license visible in the repo's About section. No video required.
+> **Architecture:** `ARCHITECTURE.md`. **Commits:** Claude never commits. Each step below lists the exact `git add` + message for you to run.
 
 ---
 
-## Phase 0: Setup and unblockers (Day 0–1) ⚠️ start immediately
-Qloo hackathon keys are issued **manually by email and can take a few business days**, so request one first.
+## The problem
+A mid-sized indie artist guesses where to tour using last year's streams and gut feel. They can't tell:
+- where they have **unserved demand**,
+- which **local opener** would actually pull a crowd,
+- which **brands** their fans love enough to sponsor a show.
 
-- [ ] Request the Qloo API key (developer guide form). Check spam. Join the Qloo Discord (#api-help).
-- [ ] Get keys/accounts: Google AI Studio (Gemini), Groq, GitHub, Vercel, Railway or Fly, Neon, Langfuse, UptimeRobot.
-- [ ] List models from the Gemini and Groq APIs: confirm `gemini-flash-latest`, `gemini-3.5-flash-lite`, `openai/gpt-oss-120b` and their free-tier limits (requests/min, requests/day). Record them in `docs/models.md`.
-- [ ] Create the **public** GitHub repo `tourscout` with the MIT `LICENSE` (set it in About), README stub, `.gitignore`, `.env.example`.
-- [ ] Lock the scope: write down MVP vs stretch (below) and the definition of done.
-- [ ] While waiting for the key: wireframe the 4 screens (Home/personas → Taste chips → Destinations → Trip + map), draft prompts, write 25–30 eval personas (inputs only).
-- [ ] Read the Qloo docs: Insights deep dive, Parameter Reference, Entity Type Parameter Guide.
+Labels pay analysts for this. Indie artists can't.
 
-**Exit criteria:** keys requested or received, repo public with license, wireframes and personas drafted.
+## The product
+**TourScout, a tour-planning agent for independent musicians.** Enter your artist name (or "sounds like X × Y"), region,
+dates and typical draw, and optionally upload a screenshot of your streaming dashboard. The agent:
+1. maps where your sound's fans are (Qloo heatmap) and compares that with where you already have listeners, revealing **unserved cities**;
+2. builds a **routed tour** (dates, drive distances, days off);
+3. for every stop, picks **venues** that match your audience, **local openers** smaller than you who pull that crowd, **promo spots** (record stores, cafés), and **sponsor brands** your fans over-index on;
+4. writes the **sponsor pitch** and **opener outreach DM**, quoting real affinity numbers, and exports the plan (CSV/ICS).
 
----
+**Proof it needs Qloo:** a *Compare* tab (LLM-only picks NYC/LA and famous openers; TourScout finds the unserved
+mid-sized cities and openers who are actually local) and an eval report with numbers.
 
-## Phase 1: Understand Qloo's data (Day 2–3)
-The goal is to *know* the data before designing prompts around it. Invalid params are silently ignored, so verify everything.
-
-- [x] Exploration tooling: `scripts/check_keys.py`, `scripts/qloo_explore.py` (search · tags · insights · shape · hypothesis · probe · coverage). Steps in `docs/phase1-runbook.md`.
-- [ ] Run the runbook against the real API once the key arrives.
-- [ ] Answer and document in `docs/qloo-notes.md`:
-  - Which signals/filters actually change results for `destination` vs `place`?
-  - How do location filters behave (city name vs coordinates/radius)? Which place categories/tags exist (restaurant, café, bar, museum, hotel)?
-  - What do affinity scores look like? What do the tag metadata fields look like (for explanations)?
-  - Coverage: big vs small cities, India vs EU/US.
-- [ ] Build the **param allow-list per `filter.type`** and a first **vibe label → tag URN** mapping (~40 labels).
-- [ ] Sanity check the core hypothesis: do different taste inputs produce clearly different destinations/places? (If not, adjust the idea now, not later.)
-
-**Exit criteria:** documented, reproducible Qloo calls for every agent step; hypothesis confirmed.
+### Already proven with real data (Phase 1, 27 Oct)
+- Heatmap for Men I Trust (US): 2,532 cells with affinity + popularity; region filter works (Texas: 384 cells).
+- Local openers for Men I Trust in Chicago: Divino Niño, Knox Fortune, Sen Morimoto, NNAMDÏ, KAINA, all Chicago acts.
+- Chicago venues by audience fit: Lincoln Hall, Thalia Hall, Concord Music Hall, Los Globos, Reggies.
+- Sponsor brands: Urban Outfitters, Dr. Martens, Polaroid nationally; Herschel and VSCO rise in Chicago.
+- 27/30 test artists are in Qloo, including Indian indie (Prateek Kuhad, When Chai Met Toast, Peter Cat Recording Co., Seedhe Maut).
 
 ---
 
-## Phase 2: Qloo MCP server (Day 4–5)
-- [ ] Qloo client: auth, retries/backoff on 429, timeouts, response trimming, private Postgres cache.
-- [ ] MCP tools: `search_entities`, `search_tags`, `get_insights`, `blend_tastes`, `explain_affinity`, with clear tool descriptions (LLMs pick tools from these descriptions).
-- [ ] Param validation against the allow-list; friendly tool errors the LLM can recover from.
-- [ ] Unit tests with recorded *fake* fixtures (not real Qloo data) plus a small live smoke test.
-- [ ] Try it in **Claude Desktop / MCP Inspector** and write `docs/mcp-claude-desktop.md`.
+## Phase 0: Setup ✅ (done)
+Repo public with MIT license, keys received (Qloo, Gemini), accounts, docs scaffold.
+- [ ] **Still open:** Groq key → `.env`, then `uv run scripts/check_keys.py`.
+- [ ] Accounts: Vercel, Railway/Fly, Neon, Langfuse, UptimeRobot; setlist.fm API key (evals).
+- [ ] GitHub About: topics `qloo`, `ai-agent`, `langgraph`, `mcp`, `music`, `touring`.
 
-**Exit criteria:** any MCP client can ask "places in Lisbon for someone who loves Wes Anderson films" and get grounded results.
+## Phase 1: Understand Qloo for touring (Day 1–2) — in progress
+- [x] Exploration tooling: `scripts/check_keys.py`, `scripts/qloo_explore.py`.
+- [x] Verified: heatmap, regional heatmap, local openers (signal.location + weight + popularity.max), venue tags, brands, `/v2/tags?filter.query=`.
+- [x] Persona artist coverage: 27/30 on Qloo.
+- [ ] Run `docs/phase1-runbook.md` fully: `hypothesis` (different artists → different demand metros), `probe` for each type, `shape` for heatmap/place/artist/brand.
+- [ ] Fill the **param allow-list** per `filter.type` in `docs/qloo-notes.md`.
+- [ ] Check heatmap aggregation by hand for 2 artists (do the top metros look sane?).
+- [ ] Decide the opener popularity margin (e.g. ≤ headliner − 0.05) and location weight from probes.
 
----
+**Exit:** allow-list complete; hypothesis PASS with a number; scoring inputs understood.
 
-## Phase 3: Agent core with LangGraph (Day 6–9)
-- [ ] State model, nodes 1–9 from the architecture, run from the CLI first (no UI).
-- [ ] Structured outputs for extraction and itinerary; human-in-the-loop interrupts (confirm chips, pick destination).
-- [ ] **Grounding validator:** every itinerary item maps to a Qloo candidate ID; constraint checks; retry loop (max 2).
-- [ ] Explanation step grounded in Qloo tags/affinity ("Because you like X and Y → this place's tags A, B").
-- [ ] **Group blend** node with fairness ranking.
-- [ ] Refinement router ("make day 2 chill", "swap museum for street food").
-- [ ] **LLM-only baseline** planner (same prompt, no tools) for compare mode and evals.
-- [ ] Model layer: Gemini primary → automatic fallback to Groq `gpt-oss-120b`; Flash-Lite for cheap steps; resolved model version logged per trace.
-- [ ] Langfuse tracing on every node and tool call.
-
-**Exit criteria:** CLI produces a full solo trip and a 3-person group trip, 100% grounded, traced.
-
----
-
-## Phase 4: Backend API (Day 10)
-- [ ] FastAPI: sessions, `/chat` with **SSE streaming** of agent events, `/resume` for interrupts, `/upload`, `/compare`, `/personas`, `/health`.
-- [ ] Postgres checkpointer so conversations survive restarts.
-- [ ] Rate limiting (per IP, per session, global daily cap), input size limits, CORS.
-
-**Exit criteria:** the whole flow works via HTTP (curl/Bruno) with streamed events.
+| Step | `git add` | Commit message |
+|---|---|---|
+| 1.1 Musician pivot docs | `git add ARCHITECTURE.md PLAN.md README.md docs/ evals/ .env.example .gitignore` | `docs: pivot TourScout to tour planning for independent musicians` |
+| 1.2 Explorer for touring | `git add scripts/` | `feat(phase1): heatmap, opener, venue and sponsor probes in qloo_explore` |
+| 1.3 Findings | `git add docs/qloo-notes.md docs/models.md` | `docs(phase1): record verified Qloo params and model check results` |
 
 ---
 
-## Phase 5: Frontend (Day 11–14)
-- [ ] One-click **demo personas** on the home page (judges can try it in 10 seconds without typing).
-- [ ] Taste input (text + chips), confirmable resolved-entity chips with images.
-- [ ] **Live agent timeline** showing each step/tool call as it streams.
-- [ ] Destination cards with affinity and "why"; itinerary by day; Leaflet map with pins.
-- [ ] Group mode: add travellers, per-person match bars.
-- [ ] **Compare tab:** LLM-only vs TourScout side by side, with hallucinated venues flagged.
-- [ ] Mobile responsive; loading/empty/error states.
+## Phase 2: TourScout MCP server (Day 3–5)
+- [ ] `packages/tourscout_mcp`: Python package (uv), `httpx` async Qloo client with retries, timeouts, response trimming, allow-list validation.
+- [ ] Postgres cache (local SQLite fallback for dev); never in git.
+- [ ] GeoNames loader (`data/download_geonames.py` → `data/raw/`), geohash → nearest metro.
+- [ ] MusicBrainz helper: artist → home area (1 req/s, cached) for the "local" badge.
+- [ ] Tools: `resolve_artist`, `search_tags`, `demand_map`, `find_venues`, `find_openers`, `find_sponsors`, `find_promo_spots`, with clear descriptions.
+- [ ] Tests: unit tests with *synthetic* fixtures (no Qloo data), one live smoke test behind a flag.
+- [ ] Try it in MCP Inspector and Claude Desktop; write `docs/mcp-claude-desktop.md`.
 
-**Exit criteria:** a stranger can complete a trip end-to-end on desktop and phone with no instructions.
+**Exit:** Claude Desktop answers "Where should Hovvdy tour in the Midwest, and who should open in Chicago?" with grounded results.
 
----
-
-## Phase 6: Multimodal + polish features (Day 15–16)
-- [ ] Photos → Gemini image input, structured output limited to our ~40 vibe labels → Qloo tags → extra signals.
-- [ ] Voice input → Gemini audio input.
-- [ ] Fallback UX: if Gemini is unavailable (Groq is text-only), show "type your vibe instead".
-- [ ] Shareable trip link (read-only view of a saved itinerary).
-- Stretch only if ahead: calendar/ICS export, budget estimates, accessibility filters.
-
-**Exit criteria:** "drop 3 Pinterest screenshots → trip" works reliably.
+| Step | `git add` | Commit message |
+|---|---|---|
+| 2.1 Package skeleton | `git add packages/tourscout_mcp/pyproject.toml packages/tourscout_mcp/src packages/tourscout_mcp/README.md` | `feat(mcp): scaffold tourscout_mcp package` |
+| 2.2 Qloo client | `git add packages/tourscout_mcp/src/tourscout_mcp/qloo.py packages/tourscout_mcp/src/tourscout_mcp/allowlist.py packages/tourscout_mcp/tests/test_qloo.py` | `feat(mcp): async Qloo client with param allow-list, retries and cache` |
+| 2.3 Geo + MusicBrainz | `git add data/download_geonames.py packages/tourscout_mcp/src/tourscout_mcp/geo.py packages/tourscout_mcp/src/tourscout_mcp/musicbrainz.py packages/tourscout_mcp/tests/test_geo.py` | `feat(mcp): geohash-to-metro mapping and MusicBrainz home-area lookup` |
+| 2.4 Tools | `git add packages/tourscout_mcp/src/tourscout_mcp/server.py packages/tourscout_mcp/src/tourscout_mcp/tools/ packages/tourscout_mcp/tests/test_tools.py` | `feat(mcp): demand_map, venue, opener, sponsor and promo tools` |
+| 2.5 Claude Desktop doc | `git add docs/mcp-claude-desktop.md` | `docs(mcp): connect TourScout MCP to Claude Desktop` |
 
 ---
 
-## Phase 7: Evals, proving Qloo matters (Day 17–18)
-- [ ] Run all personas through TourScout and the LLM-only baseline.
-- [ ] Metrics: grounding rate, constraint satisfaction, LLM-as-judge pairwise taste relevance, group fairness, latency, cost.
-- [ ] Small human preference check (5–10 friends, blind A/B).
-- [ ] Results table and short analysis in the README (including where TourScout *loses*: honesty reads well).
-- [ ] Add an eval smoke run to CI.
+## Phase 3: Scoring engine + agent (Day 6–10)
+- [ ] `apps/api/scoring/`: metro aggregation, demand, reach, gap labels, route (nearest-neighbour + 2-opt, drive limits). 100% unit-tested.
+- [ ] Reach ingest: Gemini reads a streaming-dashboard screenshot → `{city, listeners}` table, confirmed by the user; CSV upload option.
+- [ ] LangGraph graph with nodes 1–10, state, Postgres checkpointer, two human-in-the-loop interrupts.
+- [ ] "Sounds like" fallback for artists not in Qloo.
+- [ ] Grounding validator (IDs + quoted numbers + constraints) with a retry loop.
+- [ ] Outputs: tour brief, sponsor pitch, opener DM, CSV/ICS export.
+- [ ] Refine router ("skip Texas", "add a day off", "rooms under 500").
+- [ ] Model layer: Gemini main/lite with automatic Groq fallback; log `modelVersion`.
+- [ ] LLM-only baseline planner.
+- [ ] Langfuse tracing.
 
-**Exit criteria:** a numbers-backed claim like "X% grounded vs Y% for LLM-only; preferred in Z% of blind comparisons".
+**Exit:** CLI run produces a full 10-date plan for Hovvdy (on Qloo) and for Easy Wanderlings ("sounds like" path), fully grounded and traced.
 
----
-
-## Phase 8: Hardening and deploy (Day 19–20)
-- [ ] Docker images for api + mcp; deploy to Railway/Fly; web to Vercel; Neon Postgres; env secrets.
-- [ ] Pre-warm the private cache for demo personas; UptimeRobot on `/health`; no cold starts.
-- [ ] Failure drills: Qloo 429/empty results, Gemini 429 / daily quota exhausted (fallback to Groq), both providers down (cached personas still work), bad uploads, long inputs, prompt injection.
-- [ ] Test from incognito on another device and network, phone and desktop.
-
-**Exit criteria:** the live URL survives 10 rapid sessions and every failure drill degrades gracefully.
-
----
-
-## Phase 9: Submission (Day 21)
-- [ ] README: pitch, **live demo link**, **MCP endpoint**, screenshots/GIF, architecture diagram, "How Qloo powers this" section, eval table, local run steps, license badge.
-- [ ] Devpost description: problem → what the agent does → why it fails without Qloo (compare + evals) → tech → challenges → what's next.
-- [ ] Confirm: repo public, LICENSE visible in About, no keys/Qloo data in git history, demo usable without login.
-- [ ] Submit before the deadline (aim 24h early).
+| Step | `git add` | Commit message |
+|---|---|---|
+| 3.1 Scoring | `git add apps/api/scoring/ apps/api/tests/test_scoring.py` | `feat(scoring): demand, reach gap and tour routing with tests` |
+| 3.2 Model layer | `git add apps/api/core/llm.py apps/api/tests/test_llm_fallback.py` | `feat(api): Gemini primary with Groq fallback and version logging` |
+| 3.3 Agent graph | `git add apps/api/agent/ apps/api/tests/test_agent.py` | `feat(agent): LangGraph tour agent with checkpoints and grounding validator` |
+| 3.4 Reach ingest | `git add apps/api/agent/nodes/reach.py apps/api/tests/test_reach.py` | `feat(agent): read streaming-dashboard screenshots into reach data` |
+| 3.5 Outputs | `git add apps/api/agent/nodes/outputs.py apps/api/agent/prompts/` | `feat(agent): sponsor pitch, opener DM and CSV/ICS export` |
+| 3.6 Baseline | `git add apps/api/baseline/` | `feat(baseline): LLM-only tour planner for compare mode and evals` |
 
 ---
 
-## Phase 10: After the hackathon (resume value)
-- [ ] Short blog post / LinkedIn write-up: "Building a taste-grounded agent with LangGraph + MCP: evals vs an LLM-only baseline".
-- [ ] Resume bullets (fill in the real numbers from Phase 7), e.g.:
-  - *Built TourScout, a LangGraph travel agent grounded in Qloo's 250M-entity taste graph via a custom MCP server; deployed full-stack (FastAPI, React, Postgres).*
-  - *Designed an eval harness over 30 personas; grounding improved from Y% (LLM-only) to X%, preferred in Z% of blind comparisons.*
-  - *Implemented group-taste blending with fairness ranking, streaming agent traces, and human-in-the-loop checkpoints.*
+## Phase 4: Backend API (Day 11)
+- [ ] FastAPI routes (§8 of the architecture) with SSE streaming of agent events.
+- [ ] Guest sessions, upload handling (size/type limits, delete after parse).
+- [ ] Rate limits: per IP, per session, global daily cap (sized from `docs/models.md`).
+
+**Exit:** the whole flow runs via HTTP with streamed events.
+
+| Step | `git add` | Commit message |
+|---|---|---|
+| 4.1 Routes + SSE | `git add apps/api/routes/ apps/api/main.py apps/api/tests/test_routes.py` | `feat(api): chat, resume, upload, compare and export endpoints with SSE` |
+| 4.2 Limits | `git add apps/api/core/ratelimit.py apps/api/core/sessions.py` | `feat(api): guest sessions and rate limits` |
+
+---
+
+## Phase 5: Frontend (Day 12–15)
+- [ ] One-click demo artists (Men I Trust, Hovvdy, Prateek Kuhad, Easy Wanderlings…).
+- [ ] Intake form + chat; screenshot upload with an editable extracted table.
+- [ ] Live agent timeline.
+- [ ] Demand map (heatmap layer + unserved/proven pins) and route line.
+- [ ] City cards: venues, openers (with "local" badge), sponsors (affinity bars), promo spots.
+- [ ] Sponsor pitch and opener DM drawers with copy buttons; CSV/ICS download.
+- [ ] Compare tab: LLM-only vs TourScout with flags (not local, not found, bigger than headliner).
+- [ ] Mobile responsive; loading, empty and error states.
+
+**Exit:** a stranger plans a tour end-to-end in under 3 minutes with no instructions.
+
+| Step | `git add` | Commit message |
+|---|---|---|
+| 5.1 Scaffold | `git add apps/web/package.json apps/web/package-lock.json apps/web/vite.config.ts apps/web/index.html apps/web/src/main.tsx apps/web/tailwind.config.js` | `feat(web): scaffold React + Vite + Tailwind app` |
+| 5.2 Intake + timeline | `git add apps/web/src/` | `feat(web): artist intake, demo personas and live agent timeline` |
+| 5.3 Map + route | `git add apps/web/src/components/DemandMap.tsx apps/web/src/components/RouteLine.tsx` | `feat(web): demand map with unserved and proven cities and tour route` |
+| 5.4 City cards | `git add apps/web/src/components/city/` | `feat(web): city cards for venues, local openers, sponsors and promo spots` |
+| 5.5 Compare | `git add apps/web/src/pages/Compare.tsx` | `feat(web): compare LLM-only plan with TourScout plan` |
+
+---
+
+## Phase 6: Evals (Day 16–18)
+- [ ] Run all personas through TourScout and the baseline.
+- [ ] Metrics: opener locality (MusicBrainz), opener fit, venue grounding, **backtest** (setlist.fm past tours vs our top-N metros vs a population-only baseline), sponsor relevance (blind judge + 5–10 humans), latency/cost.
+- [ ] Tune scoring weights on the backtest. Keep a held-out set so we don't overfit.
+- [ ] README results table, including where TourScout loses.
+- [ ] CI eval smoke test.
+
+**Exit:** numbers like "X% of openers local vs Y% for LLM-only; Z% of real tour cities in our top 10".
+
+| Step | `git add` | Commit message |
+|---|---|---|
+| 6.1 Harness | `git add evals/run.py evals/metrics/ evals/tests/` | `feat(evals): eval harness for openers, venues and sponsors` |
+| 6.2 Backtest | `git add evals/backtest/` | `feat(evals): setlist.fm backtest of demand ranking` |
+| 6.3 Results | `git add evals/reports/summary.md README.md` | `docs(evals): publish TourScout vs LLM-only results` |
+
+---
+
+## Phase 7: Harden + deploy (Day 19–20)
+- [ ] Dockerfiles; deploy api + mcp to Railway/Fly, web to Vercel, Neon Postgres, Langfuse.
+- [ ] Pre-warm the private cache for demo artists; UptimeRobot on `/health`; no cold starts.
+- [ ] Failure drills: Gemini 503/429 (→ Groq), Qloo slow heatmap/429, artist not found, empty region, huge or odd uploads, prompt injection.
+- [ ] Test in incognito, on a phone, on another network.
+
+**Exit:** the live URL survives 10 rapid sessions and every failure drill degrades gracefully.
+
+| Step | `git add` | Commit message |
+|---|---|---|
+| 7.1 Docker | `git add infra/ apps/api/Dockerfile packages/tourscout_mcp/Dockerfile` | `chore(infra): Dockerfiles for api and mcp` |
+| 7.2 CI/CD | `git add .github/workflows/` | `ci: lint, tests and deploy workflows` |
+| 7.3 Hardening | `git add apps/ packages/` | `fix: graceful fallbacks from failure drills` |
+
+---
+
+## Phase 8: Submit (Day 21)
+- [ ] README: pitch, **live demo link**, **MCP endpoint**, GIF/screenshots, diagram, "How Qloo powers this", eval table, run steps, credits (GeoNames, MusicBrainz, setlist.fm).
+- [ ] Devpost text: problem → agent → why it fails without Qloo (compare + evals) → tech → challenges → next.
+- [ ] Final checks: repo public, LICENSE in About, no keys/Qloo data in history (`git log -p | grep -i "hack_"` returns nothing), demo works without login.
+- [ ] Submit 24 h early.
+
+| Step | `git add` | Commit message |
+|---|---|---|
+| 8.1 Submission docs | `git add README.md docs/diagrams/ docs/devpost.md` | `docs: submission README, diagrams and Devpost write-up` |
+| 8.2 Release | `git tag v1.0.0 && git push --tags` | (tag: `v1.0.0 – Qloo hackathon submission`) |
+
+## Phase 9: After (resume)
+- Blog/LinkedIn: "Building a taste-grounded tour-planning agent with LangGraph + MCP".
+- Resume bullets (fill in Phase 6 numbers):
+  - *Built TourScout, an agent that plans tours for independent musicians from Qloo's 250M-entity taste graph via a custom MCP server; full stack: FastAPI, LangGraph, React, Postgres.*
+  - *Designed deterministic demand-gap scoring and routing; backtest showed X% of real tour cities in the top-10 vs Y% for a population baseline.*
+  - *Local-opener precision X% vs Y% for an LLM-only baseline (MusicBrainz-verified).*
 
 ---
 
 ## Scope guard
-
-| MVP (must ship) | Stretch (only if ahead) |
+| MVP | Stretch |
 |---|---|
-| Solo + group trip, Qloo MCP server, LangGraph agent with HITL, grounding validator, streaming timeline, map, compare mode, demo personas, evals, hosted | Photos/voice, shareable link, ICS export, budget estimates, accessibility filters, auth/saved profiles |
-
-Note: multimodal is Phase 6, deliberately after the core works. A polished core beats a half-working feature list.
+| Artist resolve + sounds-like fallback, demand map, gap scoring, route, venues, openers, sponsors, sponsor pitch, opener DM, compare, evals, MCP server, hosted | Promo spots, streaming screenshot ingest (CSV/manual first), ICS export, multi-region tours, merch ideas, poster-style suggestions |
 
 ## Risks
 | Risk | Mitigation |
 |---|---|
-| Qloo key arrives late | Request on Day 0; do wireframes/prompts/personas while waiting |
-| Weak Qloo coverage for some cities | Phase 1 coverage check; steer personas to well-covered destinations; graceful "broaden search" fallback |
-| Silent param failures | Per-type allow-list + tests that assert results change when signals change |
-| Quota burn from public demo | Private cache, rate limits, daily cap; ask in Discord #api-help for higher limits |
-| LLM hallucinated venues | Grounding validator + retry; compare mode turns this into a selling point |
-| Gemini free daily quota burned by public traffic | Flash-Lite for cheap steps, private cache, rate limits, auto-fallback to Groq |
-| Numbered Gemini Flash retired during judging | Use the `gemini-flash-latest` alias in production; log the resolved version |
-| Deadline crunch | Scope guard above; stretch items are cut first |
-
-> Day numbers assume ~3 weeks. Scale them to the actual deadline on Devpost; the phase order stays the same.
+| Heatmap cells → wrong cities | GeoNames nearest-metro with a 50 km cap; manual sanity check of 2 artists in Phase 1 |
+| Affinity favours tiny areas (seen: Ladakh for Prateek Kuhad) | Weight by popularity and population; minimum metro size |
+| No venue capacity in Qloo | Say "capacity: verify"; artist enters typical draw; never invent a capacity |
+| Opener too big (e.g. Japanese Breakfast for Men I Trust) | `filter.popularity.max` below the headliner; exclude the headliner |
+| Gemini 503 (seen in the key check) / free quota | Lite alias for cheap steps, cache, auto-fallback to Groq |
+| Qloo quota burn from the public demo | Private cache, caps; ask Discord #api-help for more |
+| Artist not in Qloo | "Sounds like" path; 3 such personas in evals |
+| Scope creep | Stretch list is cut first |

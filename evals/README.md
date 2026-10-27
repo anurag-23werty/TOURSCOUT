@@ -1,23 +1,28 @@
 # Evals
 
-**Question we answer:** does TourScout (Qloo-grounded agent) beat an LLM-only planner on real traveller tastes?
+**Question:** does TourScout (Qloo-grounded agent) plan better tours for indie artists than an LLM-only planner?
 
-## Persona set: `personas/personas.jsonl`
-30 personas (inputs only; **no Qloo data is stored here**, per Qloo's terms):
-- `solo-01…18`: varied cross-domain tastes (film, music, books, podcasts, games, brands, food), budgets, paces, India + global
-- `group-01…08`: 2–4 travellers, from overlapping to opposite tastes, plus dietary conflicts and fixed destinations
-- `edge-01…04`: prompt injection, empty signals, low-coverage destination, out-of-range constraints
+## Persona set: `personas/personas.jsonl` (30)
+Inputs only. **No Qloo data is stored here** (Qloo terms). `reach_synthetic` values are made-up test inputs, not real stats.
+- `us-01…12`: US artists across regions, sizes (Qloo popularity .78–.99) and genres (indie, folk, soul, Spanish-language)
+- `eu-01…03`: UK and EU multi-country routes
+- `in-01…07`: Indian artists, incl. fly-between-cities tours (`max_drive_km: 0`) and low-coverage acts
+- `nq-01…04`: artists **not on Qloo** (verified: search returns a different artist) → "sounds like" path and fuzzy-match traps
+- `edge-01…04`: prompt injection, empty region, impossible constraints, everything already served
 
-Fields: `id`, `mode`, `travellers[{name, input}]`, `constraints{days, budget, pace, dietary, accessibility, origin, destination}`, `tests[]` (what this persona checks).
+Fields: `id, artist, sounds_like[], home_base, regions[], window[start,end], n_shows, draw[min,max], max_drive_km, past_cities[], reach_synthetic{city: listeners}, notes?, tests[]`.
 
-## Metrics (implemented in Phase 7)
+## Metrics (implemented in Phase 6)
 | Metric | How | Target |
 |---|---|---|
-| Grounding rate | % of recommended venues that resolve to a real Qloo entity (baseline names are checked via `/search`) | TourScout 100% |
-| Constraint satisfaction | rule checks: days, budget, dietary, pace | ≥ 95% |
-| Taste relevance | blind pairwise LLM judge (Groq `gpt-oss-120b`) + 5–10 humans on a subset | TourScout preferred in most comparisons |
-| Group fairness | min per-person affinity across the plan (group personas) | higher than baseline |
-| Edge behaviour | pass/fail per `tests[]` | all pass |
-| Latency / cost | p50, p95 time; LLM calls per trip | p50 < 30 s |
+| **Opener locality** | % of suggested openers whose MusicBrainz area/begin-area is in the show's metro | TourScout ≫ LLM-only |
+| **Opener fit** | % of openers with Qloo popularity < headliner and an overlapping genre tag | ≥ 90% |
+| **Venue grounding** | % of venues that resolve to a real Qloo place in the right city (LLM-only names are checked via `/search`) | TourScout 100% |
+| **Backtest** | For 10–15 real artists, the share of cities from their last real tour (setlist.fm) that are in TourScout's top-N demand metros, vs a population-only ranking | beat the population baseline |
+| **Sponsor relevance** | blind pairwise LLM judge (Groq gpt-oss-120b) + 5–10 humans on a subset | TourScout preferred |
+| **Constraint satisfaction** | dates, n_shows, max drive, draw range respected | ≥ 95% |
+| **Edge behaviour** | pass/fail per `tests[]` | all pass |
+| **Latency / cost** | p50 and p95 time to full plan; LLM calls per plan | p50 < 45 s |
 
-Raw run outputs (they contain Qloo data) go to `reports/raw/`, which is git-ignored. Only aggregate numbers are committed.
+Raw run outputs contain Qloo data → `reports/raw/` (git-ignored). Only aggregate numbers are committed.
+Backtest caveat: real tours aren't necessarily optimal, so this measures *signal*, not ground truth. We say so in the README.

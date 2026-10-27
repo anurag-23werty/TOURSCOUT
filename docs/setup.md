@@ -38,7 +38,7 @@ Then follow `docs/models.md` to confirm the model names and free-tier limits.
    git remote add origin https://github.com/<your-username>/tourscout.git
    git push -u origin main
    ```
-3. On the repo page → ⚙️ next to **About** → add the description, website (later) and topics: `qloo`, `ai-agent`, `langgraph`, `mcp`, `travel`.
+3. On the repo page → ⚙️ next to **About** → add the description, website (later) and topics: `qloo`, `ai-agent`, `langgraph`, `mcp`, `music`, `touring`.
    GitHub detects `LICENSE` automatically and shows **MIT License** in About. Check that it appears.
 
 ## 5. Local tools to install (for Phase 1+)

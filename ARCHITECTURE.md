@@ -1,269 +1,313 @@
 # TourScout: Architecture
 
-> A taste-grounded travel agent. It plans trips (solo or group) from what people actually love,
-> using Qloo's taste graph as the source of truth and Google Gemini (with Groq as fallback) for reasoning, vision and language.
+> **TourScout is a tour-planning agent for independent musicians.**
+> It shows an indie artist where they have **unserved demand**, which **local openers** would actually pull a crowd, which
+> **venues** fit their audience, and which **brands** their fans love enough to sponsor a show. Labels pay analysts
+> for this; TourScout gives it to independent artists, grounded in Qloo's taste graph.
 
 ---
 
-## 0. Design principles (what the judges asked for, turned into rules)
+## 0. The problem → what Qloo uniquely gives us
 
-| Hackathon requirement | Architectural rule |
-|---|---|
-| "Agentic tool / agent framework / wire Qloo into an existing agent" | **LangGraph** agent **and** a standalone **Qloo MCP server**. The same tools plug into our agent *and* into Claude Desktop / any MCP client. That covers two of the three allowed shapes. |
-| "If it works the same without Qloo, you're building the wrong thing" | **Grounding contract:** the agent may only recommend entities Qloo returned. A validator node enforces it. A built-in **"LLM-only vs TourScout" compare mode** shows the difference live. |
-| "Functional demo, externally hosted, end-to-end" | Guest mode (no login), cold-start-free hosting, pre-warmed demo personas, per-IP rate limits so judges never hit a dead app. |
-| "Public repo, all source + instructions, OSS license" | Monorepo, MIT `LICENSE`, one-command local run, `.env.example`. **No Qloo response data committed** (Qloo terms). |
+| An indie artist today… | Why an LLM alone fails | What Qloo gives TourScout (verified in Phase 1) |
+|---|---|---|
+| guesses cities from last year's streams + gut feel | it knows big cities, not where *this* sound's fans cluster | **Heatmap**: `filter.type=urn:heatmap` + artist signal → ~2,500 geohash cells with `affinity` and `popularity` for the US alone; it also works inside a region (Texas → 384 cells) |
+| can't see unserved demand | it has no data on the artist's current reach | Qloo demand **minus** the artist's own reach (streaming top cities, past shows) = the gap |
+| picks openers they already know | it invents or names famous acts | `urn:entity:artist` + `signal.location.query=<city>` + high `signal.location.weight` + `filter.popularity.max` → for Men I Trust in Chicago it returned Divino Niño, Knox Fortune, Sen Morimoto, NNAMDÏ, KAINA, **all actual Chicago acts** |
+| finds venues by word of mouth | it can't rank venues by audience fit | `urn:entity:place` + `filter.tags=urn:tag:category:place:live_music_venue` + artist signal → Lincoln Hall, Thalia Hall, Concord, Los Globos, Reggies, each with rating, hours, address and coordinates |
+| has no sponsor deck | brand guesses aren't evidence | `urn:entity:brand` + artist signal (+ city) → ranked by affinity (Urban Outfitters, Dr. Martens, Polaroid… and in Chicago: Herschel, VSCO) |
+
+**If you remove Qloo, every one of these steps loses its evidence.** That's the hackathon's own test.
 
 ---
 
-## 1. System overview
+## 1. Design principles
+
+1. **Qloo is the source of truth; the LLM reasons and writes.** Every venue, opener and brand in the output must be a Qloo entity ID returned in this run. A validator enforces it.
+2. **Code computes numbers, the LLM explains them.** Demand scores, the unserved-demand gap, routing distances and rankings are deterministic Python. The LLM never invents a number; it may only quote numbers given to it.
+3. **Honest about gaps.** Qloo has no venue capacity or booking data. The UI says "capacity: verify" instead of guessing; the artist can enter their typical draw.
+4. **Agent, not a pipeline.** A LangGraph agent decides which tools to call, asks the artist at checkpoints (human-in-the-loop), and handles refinement ("skip Texas", "only rooms under 500").
+5. **Reusable capability.** All Qloo access goes through a **TourScout MCP server**, so Claude Desktop or any MCP agent can ask "where should Hovvdy tour in the Midwest?". That also covers the hackathon's "wire Qloo into an existing agent" track.
+
+---
+
+## 2. System overview
 
 ```mermaid
 flowchart TB
-    subgraph Client["Frontend (Vercel) — React + Vite + Tailwind"]
-        UI[Chat + Taste chips]
-        TL[Live agent-step timeline]
-        MAP[Leaflet / OSM map]
+    subgraph Web["Frontend (Vercel): React + Vite + Tailwind"]
+        IN[Artist intake<br/>name or 'sounds like' · region · dates · draw]
+        TL[Live agent timeline]
+        MAP[Demand map + route<br/>Leaflet / OSM]
+        CARDS[City cards: venues · openers · sponsors · promo]
         CMP[Compare: LLM-only vs TourScout]
     end
 
-    subgraph API["Backend (Railway / Fly.io) — FastAPI"]
-        GW[API layer<br/>SSE streaming · rate limit · guest sessions]
-        AG[LangGraph Trip Agent]
-        BASE[Baseline: LLM-only planner]
-        EV[Grounding validator]
+    subgraph API["Backend (Railway / Fly): FastAPI"]
+        GW[API: SSE streaming · guest sessions · rate limits]
+        AG[LangGraph Tour Agent]
+        SC[Scoring engine<br/>demand · gap · route — pure Python]
+        VA[Grounding validator]
+        BL[LLM-only baseline]
     end
 
-    subgraph Tools["Qloo MCP Server (FastMCP) — separate process"]
-        T1[search_entities]
-        T2[search_tags]
-        T3[get_insights]
-        T4[blend_tastes]
-        T5[explain_affinity]
+    subgraph MCP["TourScout MCP server (FastMCP)"]
+        T1[resolve_artist]
+        T2[demand_map]
+        T3[find_venues]
+        T4[find_openers]
+        T5[find_sponsors]
+        T6[find_promo_spots]
+        T7[search_tags]
     end
 
-    subgraph Models["Model providers"]
-        GEM[Google Gemini — primary<br/>gemini-flash-latest · flash-lite<br/>text · images · audio]
-        GROQ[Groq — fallback<br/>openai/gpt-oss-120b · text only]
+    subgraph Ext["External data"]
+        QLOO[(Qloo API<br/>hackathon.api.qloo.com)]
+        GEO[(GeoNames cities<br/>geohash → city, population)]
+        MB[(MusicBrainz<br/>artist home area, for evals + 'local' badge)]
     end
 
-    QLOO[(Qloo API<br/>hackathon.api.qloo.com)]
-    DB[(Postgres — Neon<br/>sessions · checkpoints · private cache)]
-    OBS[Langfuse<br/>traces · cost · latency]
+    subgraph LLM["Models"]
+        GEM[Gemini: gemini-flash-latest<br/>+ flash-lite-latest · reads screenshots]
+        GROQ[Groq: gpt-oss-120b<br/>fallback · eval judge]
+    end
 
-    UI --> GW
-    GW --> AG
-    GW --> BASE
-    AG -->|MCP over HTTP| Tools
-    AG --> GEM
-    AG -. on 429 / quota / 5xx .-> GROQ
-    AG --> EV
-    Tools -->|X-Api-Key| QLOO
-    Tools <--> DB
+    DB[(Neon Postgres<br/>sessions · checkpoints · private Qloo cache)]
+    OBS[Langfuse traces]
+
+    Web --> GW --> AG
+    GW --> BL
+    AG --> SC
+    AG --> VA
+    AG -->|MCP| MCP
+    MCP --> QLOO
+    MCP --> GEO
+    MCP --> MB
+    MCP <--> DB
     AG <--> DB
+    AG --> GEM
+    AG -. 429 / 503 / quota .-> GROQ
     AG -.-> OBS
-    GW --> TL & MAP & CMP
 ```
-
-**Why an MCP server instead of plain functions?**
-1. It decouples the "taste capability" from the agent, so it can be tested, versioned and deployed independently.
-2. It fulfils the "wire Qloo into an agent you already have" track for free: a judge can add TourScout's MCP URL to Claude Desktop and ask for taste-grounded recommendations.
-3. It's a strong resume signal: "designed and shipped an MCP server" is a concrete, current agent-engineering skill.
 
 ---
 
-## 2. The agent (LangGraph state machine)
+## 3. The agent (LangGraph)
 
 ```mermaid
 flowchart LR
-    START((start)) --> IN[1. Intake<br/>text · photos · voice]
-    IN --> EX[2. Extract taste<br/>LLM → entities, vibes, constraints]
-    EX --> RS[3. Resolve<br/>Qloo search + tags]
-    RS --> HITL1{{"⏸ Human check:<br/>confirm taste chips"}}
-    HITL1 --> PL[4. Plan<br/>which domains & categories matter for this person]
-    PL --> DS[5. Discover destinations<br/>Qloo insights: destination]
-    DS --> HITL2{{"⏸ Human pick:<br/>choose a destination"}}
-    HITL2 --> PX[6. Discover places<br/>parallel Qloo insights: place × categories]
-    PX --> CO[7. Compose itinerary<br/>LLM, strict schema]
-    CO --> VA{8. Validate<br/>grounding · constraints · diversity}
-    VA -- fail, max 2 retries --> CO
-    VA -- pass --> EXP[9. Explain<br/>why-this-matches-you per item]
-    EXP --> OUT((respond))
-    OUT -. user refines in chat .-> RF[10. Refine router]
-    RF --> PX
-    RF --> CO
+    S((start)) --> I[1 Intake]
+    I --> R[2 Resolve artist<br/>Qloo search; else 'sounds like' artists]
+    R --> H1{{"⏸ Confirm: is this you?<br/>+ similar-artist signals"}}
+    H1 --> RE[3 Reach ingest<br/>streams screenshot/CSV · past shows]
+    RE --> D[4 Demand map<br/>Qloo heatmap per region → metros]
+    D --> G[5 Opportunity scoring<br/>code: demand vs reach → unserved / proven / skip]
+    G --> H2{{"⏸ Pick cities<br/>edit dates, max drive, draw"}}
+    H2 --> RT[6 Route<br/>code: order stops, drive km/day, days off]
+    RT --> F[7 City fan-out — parallel per city]
+    F --> F1[venues]
+    F --> F2[openers]
+    F --> F3[sponsors]
+    F --> F4[promo spots]
+    F1 & F2 & F3 & F4 --> C[8 Compose tour brief<br/>LLM, strict schema, only given IDs]
+    C --> V{9 Validate<br/>IDs · numbers · constraints}
+    V -- fail, ≤2 retries --> C
+    V -- pass --> O[10 Outputs<br/>plan · city cards · sponsor pitch · opener DMs · export]
+    O -. refine: 'skip Texas', 'smaller rooms' .-> RF[Refine router]
+    RF --> G
+    RF --> F
+    RF --> C
 ```
 
-**Group mode:** step 2 runs once per traveller and step 3 adds a **Blend** node. Each person's Qloo signals are queried separately and together, and destinations and places are ranked by the *minimum* (fairness) or *mean* affinity across members. The UI shows a per-person satisfaction bar. An LLM-only planner can't do this credibly, so this is our headline feature.
+### Node responsibilities
+| # | Node | LLM? | What it does |
+|---|---|---|---|
+| 1 | Intake | lite | Parses free text into: artist name or "sounds like" list, home base, region(s), tour window, number of shows, typical draw (cap range), budget, past cities |
+| 2 | Resolve | – | `resolve_artist`. If the artist isn't in Qloo, resolves 2–5 "sounds like" artists and uses them as the taste signal (and says so in the UI) |
+| 3 | Reach ingest | main (vision) | Optional. Gemini reads a screenshot of the artist's streaming dashboard (top cities + listeners) or a CSV. Past show cities count as "served" |
+| 4 | Demand map | – | `demand_map(artist_ids, region)`: heatmap cells → aggregated to metros |
+| 5 | Scoring | – | Deterministic scoring (§5): demand, reach, gap → `unserved` / `proven` / `low` |
+| 6 | Route | – | Orders the chosen cities: nearest-neighbour + 2-opt on haversine × road factor; respects max drive per day and days off |
+| 7 | Fan-out | – | Parallel per city: `find_venues`, `find_openers`, `find_sponsors`, `find_promo_spots` |
+| 8 | Compose | main | Writes the tour brief: why each city, best venue + opener per date, sponsor angle. Uses only IDs and numbers given |
+| 9 | Validate | – | Every entity ID ∈ fetched candidates; every quoted number ∈ computed numbers; dates/drive constraints hold |
+| 10 | Outputs | main | Sponsor pitch email per brand, opener outreach DM, CSV/ICS export |
 
 ### Agent state (conceptual)
 | Field | Holds |
 |---|---|
-| `travellers[]` | per person: raw input, resolved Qloo entity IDs, tag IDs, vibe labels |
-| `constraints` | days, budget, pace, dietary, accessibility, dates, origin |
-| `plan` | categories to fetch + weights (e.g. foodie → more restaurants) |
-| `destinations[]` | Qloo results + affinity + supporting tags |
-| `candidate_places{category: []}` | Qloo place results with lat/lng, tags, affinity |
-| `itinerary` | days → slots → `place_id` (must exist in candidates) |
-| `validation` | grounding %, constraint violations, retry count |
-| `trace` | step events streamed to the UI |
+| `artist` | Qloo ID or null, name, popularity, `signal_ids` (self or sounds-like), `on_qloo` flag |
+| `constraints` | region(s), window, n_shows, draw range, max_drive_km, home base, budget |
+| `reach` | city → listeners/fans (from screenshot/CSV), `served_cities` (past shows) |
+| `metros[]` | metro, lat/lon, population, demand, reach, gap, label |
+| `route[]` | ordered stops with dates and drive km |
+| `city_intel{metro}` | venues[], openers[], sponsors[], promo_spots[] (all Qloo entities) |
+| `brief` | composed output (schema-validated) |
+| `validation` | violations, retry count |
+| `trace` | events streamed to the UI |
 
-Checkpointed in Postgres via the LangGraph checkpointer, so refinement turns resume state instead of starting over.
+Checkpointed in Postgres (LangGraph checkpointer), so refinement continues the same run.
 
 ---
 
-## 3. Tool catalog (Qloo MCP server)
+## 4. TourScout MCP server: tool catalog
 
-| Tool | Wraps | Purpose |
+| Tool | Qloo calls (verified params) | Returns (trimmed) |
 |---|---|---|
-| `search_entities(query, types)` | `GET /search` | name → Qloo entity ID (movie, artist, book, brand, tv_show, podcast, video_game, place, destination) |
-| `search_tags(query, type?)` | `GET /v2/tags` | free words / vibe labels → valid tag URNs |
-| `get_insights(filter_type, signals, filters, take)` | `GET /v2/insights` | core recommender; used for `urn:entity:destination` and `urn:entity:place` |
-| `blend_tastes(profiles[], filter_type, filters)` | multiple `/v2/insights` | per-person and joint affinity → fairness-ranked list |
-| `explain_affinity(entity_id, signals)` | `/v2/insights` tag metadata | returns the tags/overlaps that justify a recommendation (feeds the "why" text) |
+| `resolve_artist(name)` | `GET /search?query=&types=urn:entity:artist&take=5` | candidates: id, name, popularity, genre tags |
+| `search_tags(query)` | `GET /v2/tags?filter.query=` | tag id, name, type, parent entity types |
+| `demand_map(signal_ids, region)` | `GET /v2/insights?filter.type=urn:heatmap&signal.interests.entities=&filter.location.query=<region>` | top metros: name, lat/lon, population, demand, cell count |
+| `find_venues(signal_ids, city, take)` | `filter.type=urn:entity:place`, `filter.location.query=<city>`, `filter.tags=urn:tag:category:place:live_music_venue`, `signal.interests.entities` | id, name, address, lat/lon, rating, hours, affinity, popularity |
+| `find_openers(signal_ids, city, headliner_popularity)` | `filter.type=urn:entity:artist`, `signal.interests.entities`, `signal.location.query=<city>`, `signal.location.weight=<high>`, `filter.popularity.max=<headliner − margin>`, `filter.exclude.entities=<headliner>` | id, name, affinity, popularity, genre tags, *local badge* (MusicBrainz) |
+| `find_sponsors(signal_ids, city?)` | `filter.type=urn:entity:brand`, `signal.interests.entities`, optional `signal.location.query` | id, name, affinity (national and city), uplift |
+| `find_promo_spots(signal_ids, city)` | `urn:entity:place` with record store / café / bar tags | id, name, address, affinity |
 
-Tool-layer rules (from the Qloo hackathon guide):
-- Base URL `https://hackathon.api.qloo.com`, header `X-Api-Key`, GET with query params only.
-- Tags and audiences must be real Qloo IDs: always resolve through `search_tags` first.
-- Invalid params are **silently ignored**, so the tool layer validates params per `filter.type` against our own allow-list (built in Phase 1).
-- Trim verbose fields (`akas` etc.) before returning to the LLM to save tokens.
-- Cache privately in Postgres (allowed with no TTL limit); never commit the cache.
+Tool-layer rules:
+- Base `https://hackathon.api.qloo.com`, header `X-Api-Key`, GET only.
+- **Allow-list of params per `filter.type`** (Qloo silently ignores invalid ones). Example found in Phase 1: `filter.location.query` is *ignored* for artists; you must use `signal.location.query`.
+- Trim verbose fields (`akas`, `disambiguation`, hours detail when not needed) before returning to the LLM.
+- Private Postgres cache keyed by `hash(path + sorted params)`. **Never commit Qloo data.**
+- Heatmap calls are the slowest (1.5–4 s, ~2,500 cells), so cache them aggressively and aggregate server-side.
 
 ---
 
-## 4. Model routing
+## 5. Scoring engine (deterministic, unit-tested)
 
-Two providers only: **Google AI Studio (Gemini)** as primary and **Groq** as fallback. Hugging Face is no longer needed,
-because Gemini covers images and audio itself. That means one less key and one less thing to break.
+Heatmap cells are geohash-4 squares (≈ 40 × 20 km). Each has `affinity` (taste match for the artist's signal, 0–1) and
+`popularity` (how much Qloo activity the cell has, 0–1). Affinity alone favours tiny, empty cells (the Prateek Kuhad India map
+ranked remote Ladakh first), so we always weight by size.
+
+1. **Cells → metros:** map each cell to the nearest GeoNames city with population ≥ 100k within 50 km. Metro demand =
+   popularity-weighted mean of cell affinity, plus the summed popularity as an audience-size proxy.
+2. **Demand score** `D = affinity_w × log10(population)`, normalised 0–100 within the region.
+3. **Reach score** `R` (0–100) from the artist's own data: streaming listeners per city (screenshot/CSV) and recency of past shows. Without data, `R = 0` and every city reads as "potential".
+4. **Gap** `= D − R`. Labels:
+   - **Unserved demand**: D high, R low → the headline insight
+   - **Proven**: D high, R high → anchor dates
+   - **Low priority**: D low
+5. **Route:** pick N cities by gap (plus anchors) under constraints, then order them by nearest-neighbour + 2-opt on haversine distance × 1.25 road factor. A leg over `max_drive_km` inserts a day off or drops the city with the lowest gap.
+
+All formulas live in one module with unit tests. The weights are constants we tune in Phase 7 using the backtest.
+
+---
+
+## 6. Model routing
 
 | Job | Model | Notes |
 |---|---|---|
-| Agent steps: extract, plan, tool calling, compose, explain | Gemini `gemini-flash-latest` (today → 3.8 Flash) | tool calling + structured output; built for long multi-step agent work |
-| Cheap steps: routing, refine-intent, summarising, formatting | Gemini `gemini-3.5-flash-lite` | protects the main model's daily quota |
-| Photos → vibe labels | Gemini Flash (image input) | structured output restricted to our ~40 vibe labels → mapped to Qloo tag URNs |
-| Voice → text | Gemini Flash (audio input) | no separate speech model |
-| Fallback for every text step | Groq `openai/gpt-oss-120b` | production model, tool calling, ~1,000 req/day free; triggered on Gemini 429 / quota / 5xx |
-| Text ↔ tag semantic match | `all-MiniLM-L6-v2` (runs locally) | zero cost; ranks candidate tags from `/v2/tags` |
-| Eval judge | Groq `openai/gpt-oss-120b` | a different model family from the generator, so it's less likely to favour its own outputs |
+| Agent reasoning, compose, sponsor pitch, outreach DMs | Gemini `gemini-flash-latest` | tool calling + structured output |
+| Intake parsing, refine-router, formatting | Gemini `gemini-flash-lite-latest` | saves main quota; alias confirmed in the model list |
+| Streaming-dashboard screenshot → cities + listeners | Gemini Flash (image input) | structured output; the user confirms the extracted table |
+| Fallback for every text step | Groq `openai/gpt-oss-120b` | on 429 / 503 / quota (Gemini returned 503 "high demand" during our key check) |
+| Eval judge | Groq `openai/gpt-oss-120b` | different model family from the generator |
 
-**Model-layer rules**
-- **Alias in production, logged version everywhere.** `gemini-flash-latest` protects the live demo if a numbered 3.x Flash is retired during judging. Every trace and eval report records the *resolved* model version, so behaviour changes stay explainable.
-- **Graceful multimodal degradation:** Groq is text-only. If Gemini is down, photo and voice inputs show "type your vibe instead" while the core agent keeps working.
-- **Do not use:** Gemini Pro (paid only), `gemini-2.5-flash` (old), Groq `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `qwen/qwen3-32b`, `llama-4-scout` (being deprecated on the free tier), and Groq Compound (shut down).
-- Model names live in config, not code. Phase 0 confirms names and free-tier limits by listing models from both APIs.
-- If Google offers a `-latest` alias for Flash-Lite, use it too (it's also a numbered model).
+Rules: model names live in config; every trace logs the resolved `modelVersion`; if Gemini is down, the screenshot upload says "enter your top cities instead".
 
 ---
 
-## 5. Request flow (solo trip, happy path)
+## 7. Request flow
 
 ```mermaid
 sequenceDiagram
-    participant U as User
+    participant A as Artist
     participant FE as Frontend
-    participant API as FastAPI (SSE)
-    participant AG as LangGraph agent
-    participant MCP as Qloo MCP
+    participant AG as Agent (FastAPI + LangGraph)
+    participant M as MCP tools
     participant Q as Qloo
     participant L as Gemini (Groq fallback)
 
-    U->>FE: "3 days, love Interstellar, Arctic Monkeys, ramen, Muji" + 2 photos
-    FE->>API: POST /chat (opens SSE stream)
-    API->>AG: run(thread_id)
-    AG->>L: extract entities + vibes + constraints
-    AG->>MCP: search_entities ×4, search_tags (parallel)
-    MCP->>Q: /search, /v2/tags
-    AG-->>FE: event: taste_chips (interrupt, user confirms)
-    AG->>MCP: get_insights(destination, signals)
-    AG-->>FE: event: destinations (interrupt, user picks Tokyo)
-    AG->>MCP: get_insights(place, Tokyo, category) × 5 (parallel)
-    AG->>L: compose itinerary (only candidate IDs)
-    AG->>AG: validate grounding/constraints (retry if needed)
-    AG->>L: explain each pick from Qloo tags
-    AG-->>FE: event: itinerary + map pins + why-panels
+    A->>FE: "Hovvdy, Midwest, 10 shows in April, rooms 300–600" + streams screenshot
+    FE->>AG: POST /api/chat (SSE)
+    AG->>L: parse intake; read screenshot → top cities
+    AG->>M: resolve_artist("Hovvdy")
+    M->>Q: /search
+    AG-->>FE: ⏸ confirm artist
+    AG->>M: demand_map(ids, "Midwest" states)
+    M->>Q: /v2/insights urn:heatmap (per state, parallel)
+    AG->>AG: score metros, gap vs streams
+    AG-->>FE: map + ranked cities (unserved / proven) ⏸ pick
+    AG->>AG: route (code)
+    par per city
+        AG->>M: find_venues / find_openers / find_sponsors / find_promo_spots
+        M->>Q: /v2/insights (place, artist, brand)
+    end
+    AG->>L: compose brief (only these IDs + numbers)
+    AG->>AG: validate → retry if needed
+    AG-->>FE: tour plan, city cards, sponsor pitches, opener DMs, export
 ```
-
-The UI renders every event in a **live agent timeline** ("🔎 Resolving 'Arctic Monkeys' → artist …", "📍 Fetching cafés in Tokyo …"), so judges can watch the agent use Qloo.
 
 ---
 
-## 6. Backend surface (our API)
+## 8. Backend surface
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/sessions` | create guest session → `thread_id` |
-| POST | `/api/chat` | user message (+ optional image/audio refs); **SSE** stream of agent events |
-| POST | `/api/resume` | answer an interrupt (confirm chips, pick destination) |
-| POST | `/api/upload` | images/audio → temp storage ref |
-| POST | `/api/compare` | same request to the LLM-only baseline, returned side by side |
-| GET  | `/api/personas` | pre-built demo personas (one-click try) |
-| GET  | `/health` | liveness for uptime pings |
-| — | `/mcp` | Qloo MCP server endpoint (streamable HTTP), public, rate-limited |
+| POST | `/api/sessions` | guest session → `thread_id` |
+| POST | `/api/chat` | message + optional upload refs → **SSE** agent events |
+| POST | `/api/resume` | answer a checkpoint (confirm artist, pick cities) |
+| POST | `/api/upload` | screenshot/CSV → temporary ref (deleted after parsing) |
+| POST | `/api/compare` | the LLM-only baseline for the same request |
+| GET | `/api/personas` | one-click demo artists |
+| GET | `/api/export/{thread_id}.{csv,ics}` | tour plan export |
+| GET | `/health` | uptime ping |
+| — | `/mcp` | public, rate-limited TourScout MCP endpoint |
 
 ---
 
-## 7. Repository layout
+## 9. Repository layout
 
 ```
 Tourscout/
-├── LICENSE                     # MIT (shows in GitHub "About")
-├── README.md                   # pitch, live links, how Qloo is used, run locally, eval results
-├── PLAN.md / ARCHITECTURE.md
-├── .env.example
+├── LICENSE · README.md · PLAN.md · ARCHITECTURE.md · .env.example
 ├── apps/
-│   ├── web/                    # React + Vite + Tailwind frontend
-│   └── api/                    # FastAPI + LangGraph agent
-│       ├── agent/              # graph, nodes, state, prompts
-│       ├── baseline/           # LLM-only planner for comparison
-│       ├── routes/
-│       └── core/               # config, db, rate limit, logging
+│   ├── web/                     # React + Vite + Tailwind
+│   └── api/                     # FastAPI + LangGraph
+│       ├── agent/               # graph, nodes, state, prompts
+│       ├── scoring/             # demand, gap, route (pure, unit-tested)
+│       ├── baseline/            # LLM-only planner
+│       └── routes/ · core/
 ├── packages/
-│   └── qloo_mcp/               # FastMCP server + Qloo client + param allow-lists
-├── evals/
-│   ├── personas/               # 25–30 test personas (inputs only, no Qloo data)
-│   ├── metrics/                # grounding, constraints, diversity, judge
-│   └── reports/                # generated summaries (numbers only)
-├── docs/
-│   ├── qloo-notes.md           # Phase 1 findings: which params work per type
-│   ├── diagrams/               # exported PNGs for README / Devpost
-│   └── mcp-claude-desktop.md   # how to plug the MCP server into Claude
-└── infra/                      # Dockerfiles, railway/fly config
+│   └── tourscout_mcp/           # FastMCP server, Qloo client, param allow-lists, GeoNames + MusicBrainz helpers
+├── data/                        # GeoNames download script (data/raw/ git-ignored)
+├── evals/                       # personas, metrics, backtest, reports (numbers only)
+├── scripts/                     # Phase 1 explorers (check_keys, qloo_explore)
+├── docs/                        # notes, runbooks, prompts, wireframes, scoring, diagrams
+└── infra/                       # Dockerfiles, deploy config
 ```
 
 ---
 
-## 8. Data, caching and storage
-- **Postgres (Neon free):** guest sessions, LangGraph checkpoints, Qloo response cache (key = hash of endpoint + sorted params), tag mapping table (vibe label → tag URN).
-- **Uploads:** kept in memory / temp only and deleted after processing. No personal data is stored beyond the session.
-- **Demo personas:** their Qloo results are pre-warmed into the *private* cache at deploy time, so they're fast and survive rate limits.
+## 10. Data, privacy and licences
+- **Qloo:** private server-side cache only (allowed by the hackathon guide); nothing in git.
+- **GeoNames** `cities15000` (CC BY 4.0): downloaded at build time, credited in the README.
+- **MusicBrainz** (core data CC0): artist home area for the "local" badge and evals. Respect 1 request/second and send a User-Agent.
+- **setlist.fm API** (evals only, free key, non-commercial): past tours for the backtest.
+- **Artist uploads:** parsed in memory, then deleted. No accounts; sessions expire.
 
 ---
 
-## 9. Deployment
+## 11. Deployment
 
 ```mermaid
 flowchart LR
-    GH[GitHub public repo] -->|CI: lint · tests · evals smoke| GA[GitHub Actions]
-    GA -->|auto deploy| V[Vercel — web]
-    GA -->|auto deploy| R[Railway / Fly — api + mcp containers]
-    R --> N[(Neon Postgres)]
-    R --> LF[Langfuse cloud]
-    UP[UptimeRobot ping /health] --> R
+    GH[GitHub public repo] --> CI[GitHub Actions<br/>lint · tests · scoring tests · eval smoke]
+    CI --> V[Vercel: web]
+    CI --> RW[Railway / Fly: api + mcp containers]
+    RW --> N[(Neon Postgres)]
+    RW --> LF[Langfuse]
+    UP[UptimeRobot → /health] --> RW
 ```
-
-- Avoid free tiers that sleep (cold start = a judge sees a spinner and leaves). Use Railway/Fly small instances, or keep-alive pings.
-- Secrets live only in the platform env vars.
-- Per-IP and per-session rate limits plus a global daily cap protect the Qloo and Groq quotas.
+No cold starts (judges leave if they see a spinner). Pre-warmed cache for demo artists. Per-IP, per-session and global daily caps protect the Qloo and Gemini quotas.
 
 ---
 
-## 10. Quality: guardrails, observability, evals
-- **Guardrails:** schema-validated LLM outputs; grounding validator; prompt-injection hygiene (user text never becomes tool params without validation); content moderation on free text.
-- **Observability:** Langfuse traces per run (each node, tool call, token use, latency). Screenshots go in the README.
-- **Evals (the resume centrepiece):** the same 25–30 personas run through **TourScout vs an LLM-only baseline**.
-  - *Grounding rate*: % of recommended venues that are real, resolvable entities.
-  - *Constraint satisfaction*: days, budget, dietary, pace.
-  - *Taste relevance*: blind LLM-as-judge pairwise preference plus a small human check (teammates/friends).
-  - *Group fairness*: min per-person affinity in group mode.
-  - *Latency / cost per trip.*
-  Results go in a table in the README: hard evidence that "it only works because of Qloo".
+## 12. Quality: guardrails, observability, evals
+- **Guardrails:** schema-validated outputs; ID and number grounding; upload size/type limits; user text treated as data (prompt-injection hygiene).
+- **Observability:** Langfuse spans for every node and tool call; the UI timeline mirrors them.
+- **Evals** (details in `evals/README.md`):
+  1. **Opener locality**: % of suggested openers actually based in that city (MusicBrainz), TourScout vs LLM-only.
+  2. **Opener fit**: % of suggested openers smaller than the headliner (Qloo popularity) and in a matching genre.
+  3. **Venue grounding**: % of venues that exist (TourScout 100% by construction; LLM-only checked via Qloo `/search`).
+  4. **Backtest**: for real indie artists' past tours (setlist.fm), what share of the cities they played rank in TourScout's top-N demand metros, vs a population-only baseline.
+  5. **Sponsor relevance**: blind pairwise LLM judge plus a small human panel.
+  6. **Latency and cost** per tour plan.

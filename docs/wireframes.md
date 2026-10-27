@@ -1,79 +1,77 @@
 # Wireframes (low-fi)
 
-Four screens plus a compare tab. Mobile stacks the columns vertically.
-
-## 1. Home
+## 1. Home / intake
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ 🧭 TourScout                               [Compare] [GitHub] │
+│ 🎸 TourScout                              [Compare] [GitHub]  │
+│   Find where your fans are. Plan the tour. Pitch the sponsors.│
 │                                                              │
-│     Trips planned from what you actually love.               │
-│                                                              │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │ I love Interstellar, Arctic Monkeys, ramen, Muji…       │  │
-│  │ 3 days · mid budget · from Bengaluru            [ Go → ]│  │
-│  └────────────────────────────────────────────────────────┘  │
-│   [ Solo ]  [ Group 👥 ]          📷 photos (stretch) 🎙 (stretch) │
-│                                                              │
-│  Try a persona:                                              │
-│  [🎬 Film nerd] [🍜 Foodie] [🎸 Indie fan] [👥 4 friends]     │
+│  Artist  [ Hovvdy                         ]  or "sounds like" │
+│  Region  [ US Midwest ▾ ]   Window [ Apr 3 – Apr 20 ]         │
+│  Shows   [ 10 ]   Typical draw [ 300–600 ]   Home [ Austin ]  │
+│  Past cities / streams  [ + add cities ] [ ⬆ CSV ] [📷 screenshot]│
+│                                              [ Scout my tour → ]│
+│  Try:  [Men I Trust] [Hovvdy] [Prateek Kuhad] [Easy Wanderlings*] │
+│        *not on Qloo → "sounds like" demo                      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## 2. Confirm taste (human-in-the-loop #1)
+## 2. Confirm artist (checkpoint 1)
 ```
 ┌───────────────────────────────┬──────────────────────────────┐
-│ We understood your taste as:  │  Agent timeline (live)        │
-│                               │  ✓ Extracted 4 interests      │
-│ [🎬 Interstellar (movie) ✕]   │  ✓ search "Arctic Monkeys"    │
-│ [🎸 Arctic Monkeys (artist)✕] │    → artist                   │
-│ [🍜 ramen → tag ✕]            │  ✓ search_tags "ramen"        │
-│ [🏷 Muji (brand) ✕]           │  ⏸ waiting for you            │
-│ Did you mean "Dune" the book? │                              │
-│ [ + add ]       [ Looks right → ]                            │
+│ Is this you?                  │ Agent timeline (live)         │
+│ ● Hovvdy · indie pop · pop .90│ ✓ parsed intake               │
+│ ○ someone else                │ ✓ resolve_artist "Hovvdy"     │
+│ Add "sounds like" signals:    │ ⏸ waiting for you             │
+│ [Pinegrove ✕] [+ add]         │                               │
+│               [ Yes, continue → ]                             │
 └───────────────────────────────┴──────────────────────────────┘
 ```
 
-## 3. Destinations (human-in-the-loop #2)
+## 3. Demand map (checkpoint 2)
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Destinations that match you                                  │
-│ ┌──────────┐ ┌──────────┐ ┌──────────┐                       │
-│ │ Tokyo    │ │ Seoul    │ │ Berlin   │                       │
-│ │ ▓▓▓▓▓ 92 │ │ ▓▓▓▓░ 85 │ │ ▓▓▓▓░ 81 │                       │
-│ │ Why: sci-│ │ Why: …   │ │ Why: …   │                       │
-│ │ fi film  │ │          │ │          │                       │
-│ │ culture, │ │          │ │          │                       │
-│ │ minimal… │ │          │ │          │                       │
-│ │ [Plan →] │ │ [Plan →] │ │ [Plan →] │                       │
-│ └──────────┘ └──────────┘ └──────────┘                       │
-│ Group mode: per-person bars  Asha ▓▓▓▓  Ravi ▓▓▓░  Meera ▓▓▓▓ │
+│  🗺  heatmap layer        ● unserved   ● proven   ○ low        │
+│     ●Minneapolis   ●Madison  ●Milwaukee                       │
+│          ●Des Moines     ●Chicago(proven)                     │
+│   ●Omaha        ●Lawrence      ●Columbus(unserved!)           │
+├──────────────────────────────────────────────────────────────┤
+│ City         Demand  Your reach  Gap   Label        Include   │
+│ Columbus       82       12       +70   UNSERVED      [✓]      │
+│ Madison        79       20       +59   UNSERVED      [✓]      │
+│ Chicago        91       85        +6   PROVEN        [✓]      │
+│ Omaha          41        5       +36   low           [ ]      │
+│                                        [ Build route → ]      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## 4. Trip
+## 4. Tour plan
 ```
 ┌──────────────────────────────┬───────────────────────────────┐
-│ Tokyo · 3 days               │                               │
-│ Day 1 ─────────────────────  │         🗺  MAP               │
-│ ☀ Morning  Café X      [why] │     📍1   📍2                 │
-│ 🌤 Afternoon Museum Y  [why] │          📍3                  │
-│ 🌙 Evening  Bar Z      [why] │                               │
-│ Day 2 … Day 3 …              │                               │
-│                              │                               │
-│ 💬 "make day 2 more chill"  [send]                           │
-│ Timeline ▸ (collapsible)     │   [Share] [Compare with LLM]  │
-└──────────────────────────────┴───────────────────────────────┘
+│ Apr 3  Chicago     (proven)  │    🗺  route line + pins       │
+│ Apr 4  Milwaukee   145 km    │                               │
+│ Apr 5  — day off —           │                               │
+│ Apr 6  Madison     125 km    │                               │
+│ …                            │                               │
+│ [Export CSV] [Export ICS]    │                               │
+├──────────────────────────────┴───────────────────────────────┤
+│ Madison: city card                                            │
+│ Venues   High Noon Saloon  aff .91 ★4.6  cap: verify  [why]   │
+│ Openers  <local act> 🏠local  pop .71  [DM ✉]                 │
+│ Sponsors Polaroid  ▓▓▓▓▓ aff .95 (+8% vs national) [Pitch ✉]  │
+│ Promo    <record store>  aff .89                              │
+└──────────────────────────────────────────────────────────────┘
 ```
-`[why]` expands: "Because you like **Arctic Monkeys** and **Muji** → Qloo tags: *indie, minimalist, vinyl* · affinity 0.87".
+`[why]` → "Fans of Hovvdy in Madison over-index on this venue (affinity 0.91). Rated 4.6. Live-music venue tag."
 
 ## 5. Compare
 ```
 ┌─────────────────────────────┬────────────────────────────────┐
 │ LLM only                    │ TourScout (Qloo-grounded)       │
-│ Day 1: Senso-ji, Shibuya    │ Day 1: Café X, Museum Y …       │
-│ "Cafe Lumiere" ⚠ not found  │ ✓ all 12 places verified        │
-│ generic, popularity-based   │ per-pick taste explanation      │
-│ Grounded: 7/12              │ Grounded: 12/12                 │
+│ Cities: NYC, LA, Chicago…   │ Columbus, Madison, Chicago…     │
+│ Opener: Phoebe Bridgers ⚠   │ Opener: <local act> 🏠 ✓        │
+│   bigger than you, not local│   smaller than you, local       │
+│ Venue "The Blue Note" ⚠ ?   │ ✓ all venues verified           │
+│ Local openers: 1/10         │ Local openers: 8/10             │
 └─────────────────────────────┴────────────────────────────────┘
 ```

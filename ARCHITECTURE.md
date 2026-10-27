@@ -156,11 +156,11 @@ Checkpointed in Postgres (LangGraph checkpointer), so refinement continues the s
 |---|---|---|
 | `resolve_artist(name)` | `GET /search?query=&types=urn:entity:artist&take=5` | candidates: id, name, popularity, genre tags |
 | `search_tags(query)` | `GET /v2/tags?filter.query=` | tag id, name, type, parent entity types |
-| `demand_map(signal_ids, region)` | `GET /v2/insights?filter.type=urn:heatmap&signal.interests.entities=&filter.location.query=<region>` | top metros: name, lat/lon, population, demand, cell count |
-| `find_venues(signal_ids, city, take)` | `filter.type=urn:entity:place`, `filter.location.query=<city>`, `filter.tags=urn:tag:category:place:live_music_venue`, `signal.interests.entities` | id, name, address, lat/lon, rating, hours, affinity, popularity |
-| `find_openers(signal_ids, city, headliner_popularity)` | `filter.type=urn:entity:artist`, `signal.interests.entities`, `signal.location.query=<city>`, `signal.location.weight=<high>`, `filter.popularity.max=<headliner − margin>`, `filter.exclude.entities=<headliner>` | id, name, affinity, popularity, genre tags, *local badge* (MusicBrainz) |
+| `demand_map(signal_ids, region)` | `GET /v2/insights?filter.type=urn:heatmap&signal.interests.entities=&filter.location.query=<region>`; several IDs blend (sounds-like path); a city region returns geohash-7 hot spots | top metros: name, lat/lon, population, demand, cell count |
+| `find_venues(signal_ids, city, take)` | `filter.type=urn:entity:place`, `filter.location.query=<city>`, `filter.tags=urn:tag:category:place:live_music_venue` **and** `urn:tag:setting:qloo:music_venue` (two calls, merged), `signal.interests.entities`. Never `filter.popularity.max` (pulls in restaurants) | id, name, address, lat/lon, rating, hours, affinity, popularity |
+| `find_openers(signal_ids, city, headliner_popularity)` | `filter.type=urn:entity:artist`, `signal.interests.entities`, `signal.location.query=<city>`, `signal.location.weight=<high>`, `filter.popularity.max=<headliner − margin>`, `filter.exclude.entities=<headliner>` | id, name, affinity, popularity, genre tags, *fit* (affinity in a no-location run), *local badge* (MusicBrainz), *national* flag (tops ≥ 3 cities) |
 | `find_sponsors(signal_ids, city?)` | `filter.type=urn:entity:brand`, `signal.interests.entities`, optional `signal.location.query` | id, name, affinity (national and city), uplift |
-| `find_promo_spots(signal_ids, city)` | `urn:entity:place` with record store / café / bar tags | id, name, address, affinity |
+| `find_promo_spots(signal_ids, city)` | `urn:entity:place` with `urn:tag:category:place:{record_store,book_store,coffee_shop,bar}`; drop results with no address | id, name, address, affinity |
 
 Tool-layer rules:
 - Base `https://hackathon.api.qloo.com`, header `X-Api-Key`, GET only.
@@ -185,7 +185,10 @@ ranked remote Ladakh first), so we always weight by size.
    - **Unserved demand**: D high, R low → the headline insight
    - **Proven**: D high, R high → anchor dates
    - **Low priority**: D low
-5. **Route:** pick N cities by gap (plus anchors) under constraints, then order them by nearest-neighbour + 2-opt on haversine distance × 1.25 road factor. A leg over `max_drive_km` inserts a day off or drops the city with the lowest gap.
+5. **Openers:** rank = `0.6 · fit + 0.4 · local affinity`, where *fit* is the opener's affinity to the headliner in a run with no
+   location signal. Drop acts flagged *national* (they top ≥ 3 cities: Jack Antonoff did in Phase 1). The MusicBrainz badge says
+   "based here" or "popular here".
+6. **Route:** pick N cities by gap (plus anchors) under constraints, then order them by nearest-neighbour + 2-opt on haversine distance × 1.25 road factor. A leg over `max_drive_km` inserts a day off or drops the city with the lowest gap.
 
 All formulas live in one module with unit tests. The weights are constants we tune in Phase 7 using the backtest.
 
@@ -198,7 +201,7 @@ All formulas live in one module with unit tests. The weights are constants we tu
 | Agent reasoning, compose, sponsor pitch, outreach DMs | Gemini `gemini-flash-latest` | tool calling + structured output |
 | Intake parsing, refine-router, formatting | Gemini `gemini-flash-lite-latest` | saves main quota; alias confirmed in the model list |
 | Streaming-dashboard screenshot → cities + listeners | Gemini Flash (image input) | structured output; the user confirms the extracted table |
-| Fallback for every text step | Groq `openai/gpt-oss-120b` | on 429 / 503 / quota (Gemini returned 503 "high demand" during our key check) |
+| Fallback for every text step | Groq `openai/gpt-oss-120b` | on 429 / 503 / quota **or a fast-fail timeout (≈ 8 s, one retry)**. Phase 1: the whole Gemini Flash family returned 503 all day and lite took 21–33 s, while Groq answered tool calls in ~1 s |
 | Eval judge | Groq `openai/gpt-oss-120b` | different model family from the generator |
 
 Rules: model names live in config; every trace logs the resolved `modelVersion`; if Gemini is down, the screenshot upload says "enter your top cities instead".

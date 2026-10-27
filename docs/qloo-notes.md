@@ -73,15 +73,55 @@ search 0.8–1.5 s · artist/brand/place insights 0.4–3.4 s · heatmap 0.8–4
 
 ---
 
-## Param allow-list per filter.type (fill from `probe`)
-| filter.type | Verified working | Verified ignored / invalid |
+## Param allow-list per filter.type ✅ complete
+| filter.type | Verified working | Verified ignored / invalid / harmful |
 |---|---|---|
-| `urn:heatmap` | `signal.interests.entities`, `filter.location.query` (country/state) | |
+| `urn:heatmap` | `signal.interests.entities` (one **or several**, comma-separated), `filter.location.query` (country / state / city) | no artist signal → **400**; `signal.demographics.age` → 7,401 cells in 14 s, ignores the region → **don't use** |
 | `urn:entity:artist` | `signal.interests.entities`, `signal.location.query`, `signal.location.weight`, `filter.popularity.max`, `signal.interests.tags`, `feature.explainability`, `take` | `filter.location.query` (ignored), `signal.location.radius` (ignored) |
-| `urn:entity:place` | `signal.interests.entities`, `filter.location.query`, `filter.tags`, `take` | |
-| `urn:entity:brand` | `signal.interests.entities`, `signal.location.query`, `take` | |
+| `urn:entity:place` | `signal.interests.entities` (changes ranking, overlap 0.36 without it), `filter.location.query`, `filter.tags`, `feature.explainability`, `take` | `filter.rating.min` (ignored), `signal.location.radius` (ignored), `filter.popularity.max` → **pulls in restaurants, don't use for venues** |
+| `urn:entity:brand` | `signal.interests.entities`, `signal.location.query` (overlap 0.30 Chicago / 0.36 Austin), `signal.demographics.age` (0.58), `bias.trends` (0.76), `feature.explainability`, `take` | |
 | `urn:entity:destination` | works but not useful | |
 | `urn:entity:locality` | — | 400 on insights |
+
+### Heatmap resolution adapts to the region ⭐
+- `United States` → geohash-**4** cells (~40 km) · `Texas` → geohash-**5** (~5 km) · `Chicago` → geohash-**7** (~150 m, 314 cells).
+- So the same tool gives **metro ranking** (country/state query) and **neighbourhood hot spots** inside a city (city query) for the flyer/promo map.
+
+### Sounds-like heatmap (artist not on Qloo) ✅
+`signal.interests.entities=<Prateek Kuhad>,<When Chai Met Toast>,<Anuv Jain>` + `filter.location.query=India` → 3,101 cells in 1.2 s.
+- Top (affinity × popularity): Bengaluru, Mumbai, Delhi, Kolkata, Goa, Pune → sensible for Indian indie.
+- Overlap with each single artist: 0.67 / 0.35 / 0.67 → it really **blends** the signals; no artist dominates. Use 2–4 sounds-like IDs.
+
+### Coverage outside the US
+| City | Venues | Top venue | Openers | Top opener | Verdict |
+|---|---|---|---|---|---|
+| Chicago / Columbus / Madison / Austin (Hovvdy) | 20–30 | Burlington Bar, Rumba Café, The Wisco, Hotel Vegas | 10 | Knox Fortune, Snarls, Disq, Duncan Fellows | ✅ real indie rooms, local openers |
+| London / Berlin (Hovvdy) | 30 | The Shacklewell Arms, Schokoladen | 10 | 00110100 01010100 | ✅ venues good, openers weaker |
+| Mumbai / Bengaluru / Delhi / Pune (Prateek Kuhad) | 12–17 | Roaring Farm, Fandom at Gilly's, Piano Man Jazz Club, BMG Unplugged | 10 | Jasleen Royal (3 cities), When Chai Met Toast | ⚠️ venues OK; same national act tops several cities → not local |
+| London (Prateek Kuhad) | 30 | Dawat Bar and Kitchen (Indian restaurant) | 10 | Moxie | ⚠️ diaspora signal pulls in restaurants |
+
+→ **Demo personas:** lead with US (Hovvdy Midwest, Men I Trust), then one India persona to show reach. Venue tags must stay on
+(`live_music_venue` + `music_venue`) to keep restaurants out, and the opener list needs a de-dupe: **an act that tops ≥ 3 cities is
+"national", not "local"**.
+
+### Promo spots ✅
+| Tag ID | Chicago results for Men I Trust fans |
+|---|---|
+| `urn:tag:category:place:record_store` | Shuga Records, Dusty Groove, Gramaphone Records, Laurie's Planet of Sound, Bucket O' Blood |
+| `urn:tag:category:place:book_store` | Quimby's Bookstore, Uncharted Books, Laurie's Planet of Sound |
+| `urn:tag:category:place:coffee_shop` | Drip Collective, Loba Pastry + Coffee, The Book Cellar (+ noise: "Chicago", an arts centre) |
+| `urn:tag:category:place:bar` | (ID verified, not yet ranked) |
+Use `category:` tags (not `genre:`/`nearby:`); drop results with no address (the "Chicago" entity).
+
+### Sponsors per city ✅
+Hovvdy national → … Cold Picnic. **Columbus** → Baggu, Need Supply Co., Entireworld, Everlane, Lacausa… new in Columbus: Everlane,
+Noto Botanics, Tradlands. Smaller DTC brands are realistic sponsor targets for a mid-sized act (unlike Urban Outfitters).
+
+### Opener cap for a small headliner (Divino Niño .782, Chicago, cap .732)
+KAINA, Ohmme, Peter CottonTale, Femdot, Joseph Chilliams, CEP, Bump J, Tatiana Hazel (8/10 Chicago ✓) + Dita Von Teese, Jack Antonoff (✗).
+- −0.05 margin is fine. Locality is good, but **genre drifts to Chicago hip-hop** → add a **fit score** = affinity of the opener in a
+  no-location run for the same headliner, and rank by `0.6·fit + 0.4·local affinity`. Jack Antonoff showing up twice (Columbus,
+  Chicago) confirms the "national act" de-dupe and the MusicBrainz badge.
 
 ### Hypothesis test ✅ PASS
 `qloo_explore.py hypothesis`: top-25 US demand cells for Men I Trust, Thee Sacred Souls, Ed Maverick, Pinegrove →
@@ -105,10 +145,7 @@ opener-locality eval will measure exactly this.
 | `signal.interests.tags=genre:indie` | CHANGED, overlap 0.67 → optional genre nudge |
 | `feature.explainability=true` | adds `query.explainability.signal…` → **use it for the "why" text** |
 
-## Still open (finish in the runbook)
-1. Heatmap with several signal IDs (sounds-like path): does it blend sensibly?
-2. Heatmap for a city's metro only (`filter.location.query=Chicago`): resolution good enough for neighbourhoods?
-3. `probe venues`, `probe sponsors`, `probe heatmap`.
-4. Promo-spot tags: record store, café, bar IDs.
-5. India and Europe: `coverage` for Bengaluru, Mumbai, Berlin, London.
-6. Opener popularity margin: is −0.05 right for small headliners (Divino Niño .78)?
+## Still open → moved to Phase 3 (scoring tuning)
+1. Fit-score weights for openers (0.6/0.4 is a first guess) → tune on the opener-fit eval.
+2. Population weighting for heatmap cells (GeoNames metro population) → check that Athens OH still ranks.
+3. Screenshot reader needs a sample streaming-dashboard image.

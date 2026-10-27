@@ -4,7 +4,7 @@ Run from the repo root (`uv` installs dependencies). Raw responses are cached in
 Write only *findings* into `docs/qloo-notes.md`.
 
 ## Done ✅ (27 Oct)
-- `check_keys.py`: Qloo ✓, Gemini listing ✓ (main alias returned 503 once), Groq pending
+- `check_keys.py`: Qloo ✓, Gemini lite ✓ (Flash main models 503 all day), Groq ✓
 - `hypothesis` → PASS, mean overlap 0.19
 - `probe openers`, `heatmap Hovvdy Ohio`, `openers Hovvdy Columbus`
 - Artist coverage 27/30
@@ -38,9 +38,10 @@ uv run scripts/qloo_explore.py sponsors "Hovvdy" --city Columbus
 uv run scripts/qloo_explore.py openers "Divino Niño" Chicago
 ```
 
-## Done when
-- [ ] Allow-list complete for heatmap, artist, place, brand
-- [ ] India/EU coverage noted (which demo personas to feature)
-- [ ] Sounds-like heatmap behaviour noted
-- [ ] Promo tag IDs listed
-- [ ] `git status` shows **no** files from `qloo_responses/`
+## Done when ✅ (27 Oct, second pass)
+- [x] Allow-list complete for heatmap, artist, place, brand
+- [x] India/EU coverage noted (which demo personas to feature)
+- [x] Sounds-like heatmap behaviour noted
+- [x] Promo tag IDs listed
+- [x] Groq key added; tool calling + structured output checked on Gemini lite and Groq (see `docs/models.md`)
+- [ ] `git status` shows **no** files from `qloo_responses/` (check after `git init`/before every commit)

@@ -61,23 +61,23 @@ Repo public with MIT license, keys received (Qloo, Gemini), accounts, docs scaff
 ---
 
 ## Phase 2: TourScout MCP server (Day 3–5)
-- [ ] `packages/tourscout_mcp`: Python package (uv), `httpx` async Qloo client with retries, timeouts, response trimming, allow-list validation.
-- [ ] Postgres cache (local SQLite fallback for dev); never in git.
-- [ ] GeoNames loader (`data/download_geonames.py` → `data/raw/`), geohash → nearest metro.
-- [ ] MusicBrainz helper: artist → home area (1 req/s, cached) for the "local" badge.
-- [ ] Tools: `resolve_artist`, `search_tags`, `demand_map`, `find_venues`, `find_openers`, `find_sponsors`, `find_promo_spots`, with clear descriptions.
-- [ ] Tests: unit tests with *synthetic* fixtures (no Qloo data), one live smoke test behind a flag.
-- [ ] Try it in MCP Inspector and Claude Desktop; write `docs/mcp-claude-desktop.md`.
+- [x] `packages/tourscout_mcp`: Python package (uv), `httpx` async Qloo client with retries, timeouts, response trimming, allow-list validation.
+- [x] Postgres cache (local SQLite fallback for dev); never in git.
+- [x] GeoNames loader (`data/download_geonames.py` → `data/raw/`), geohash → nearest metro.
+- [x] MusicBrainz helper: artist → home area (1 req/s, cached) for the "local" badge.
+- [x] Tools: `resolve_artist`, `search_tags`, `demand_map`, `find_venues`, `find_openers`, `find_sponsors`, `find_promo_spots`, with clear descriptions.
+- [x] Tests: unit tests with *synthetic* fixtures (no Qloo data), one live smoke test behind a flag.
+- [x] Write `docs/mcp-claude-desktop.md`; stdio + HTTP verified with a real MCP client. [ ] Claude Desktop check (by hand).
 
 **Exit:** Claude Desktop answers "Where should Hovvdy tour in the Midwest, and who should open in Chicago?" with grounded results.
 
 | Step | `git add` | Commit message |
 |---|---|---|
-| 2.1 Package skeleton | `git add packages/tourscout_mcp/pyproject.toml packages/tourscout_mcp/src packages/tourscout_mcp/README.md` | `feat(mcp): scaffold tourscout_mcp package` |
-| 2.2 Qloo client | `git add packages/tourscout_mcp/src/tourscout_mcp/qloo.py packages/tourscout_mcp/src/tourscout_mcp/allowlist.py packages/tourscout_mcp/tests/test_qloo.py` | `feat(mcp): async Qloo client with param allow-list, retries and cache` |
+| 2.1 Package skeleton | `git add packages/tourscout_mcp/pyproject.toml packages/tourscout_mcp/uv.lock packages/tourscout_mcp/README.md packages/tourscout_mcp/src/tourscout_mcp/__init__.py packages/tourscout_mcp/src/tourscout_mcp/config.py` | `feat(mcp): scaffold tourscout_mcp package (mcp 2.x, uv)` |
+| 2.2 Qloo client | `git add packages/tourscout_mcp/src/tourscout_mcp/qloo.py packages/tourscout_mcp/src/tourscout_mcp/allowlist.py packages/tourscout_mcp/src/tourscout_mcp/cache.py packages/tourscout_mcp/tests/conftest.py packages/tourscout_mcp/tests/test_qloo.py` | `feat(mcp): async Qloo client with param allow-list, retries and private cache` |
 | 2.3 Geo + MusicBrainz | `git add data/download_geonames.py packages/tourscout_mcp/src/tourscout_mcp/geo.py packages/tourscout_mcp/src/tourscout_mcp/musicbrainz.py packages/tourscout_mcp/tests/test_geo.py` | `feat(mcp): geohash-to-metro mapping and MusicBrainz home-area lookup` |
-| 2.4 Tools | `git add packages/tourscout_mcp/src/tourscout_mcp/server.py packages/tourscout_mcp/src/tourscout_mcp/tools/ packages/tourscout_mcp/tests/test_tools.py` | `feat(mcp): demand_map, venue, opener, sponsor and promo tools` |
-| 2.5 Claude Desktop doc | `git add docs/mcp-claude-desktop.md` | `docs(mcp): connect TourScout MCP to Claude Desktop` |
+| 2.4 Tools + server | `git add packages/tourscout_mcp/src/tourscout_mcp/server.py packages/tourscout_mcp/src/tourscout_mcp/tools/ packages/tourscout_mcp/tests/test_tools.py packages/tourscout_mcp/tests/test_live.py` | `feat(mcp): demand_map, venue, opener, sponsor and promo tools over MCP` |
+| 2.5 Docs | `git add docs/mcp-claude-desktop.md docs/qloo-notes.md ARCHITECTURE.md PLAN.md` | `docs(mcp): Claude Desktop setup and Phase 2 findings` |
 
 ---
 

@@ -156,9 +156,9 @@ Checkpointed in Postgres (LangGraph checkpointer), so refinement continues the s
 |---|---|---|
 | `resolve_artist(name)` | `GET /search?query=&types=urn:entity:artist&take=5` | candidates: id, name, popularity, genre tags |
 | `search_tags(query)` | `GET /v2/tags?filter.query=` | tag id, name, type, parent entity types |
-| `demand_map(signal_ids, region)` | `GET /v2/insights?filter.type=urn:heatmap&signal.interests.entities=&filter.location.query=<region>`; several IDs blend (sounds-like path); a city region returns geohash-7 hot spots | top metros: name, lat/lon, population, demand, cell count |
+| `demand_map(signal_ids, region)` | `GET /v2/insights?filter.type=urn:heatmap&signal.interests.entities=&filter.location.query=<region>`; several IDs blend (sounds-like path); a city region returns geohash-7 hot spots; regions like "Midwest" expand to states, queried in parallel, border cells de-duplicated | top metros: name, lat/lon, population, demand, cell count |
 | `find_venues(signal_ids, city, take)` | `filter.type=urn:entity:place`, `filter.location.query=<city>`, `filter.tags=urn:tag:category:place:live_music_venue` **and** `urn:tag:setting:qloo:music_venue` (two calls, merged), `signal.interests.entities`. Never `filter.popularity.max` (pulls in restaurants) | id, name, address, lat/lon, rating, hours, affinity, popularity |
-| `find_openers(signal_ids, city, headliner_popularity)` | `filter.type=urn:entity:artist`, `signal.interests.entities`, `signal.location.query=<city>`, `signal.location.weight=<high>`, `filter.popularity.max=<headliner − margin>`, `filter.exclude.entities=<headliner>` | id, name, affinity, popularity, genre tags, *fit* (affinity in a no-location run), *local badge* (MusicBrainz), *national* flag (tops ≥ 3 cities) |
+| `find_openers(headliner_id, cities[])` | `filter.type=urn:entity:artist`, `signal.interests.entities`, `signal.location.query=<city>`, `signal.location.weight=<high>`, `filter.popularity.max=<headliner − 0.05>` (headliner popularity via `GET /entities?entity_ids=`), `filter.exclude.entities=<headliner>`, `take=20` per city, in parallel | id, name, affinity, popularity, genre tags, *fit* (genre-tag overlap with the headliner), *local badge* (MusicBrainz), *national* flag (tops ≥ 3 cities) |
 | `find_sponsors(signal_ids, city?)` | `filter.type=urn:entity:brand`, `signal.interests.entities`, optional `signal.location.query` | id, name, affinity (national and city), uplift |
 | `find_promo_spots(signal_ids, city)` | `urn:entity:place` with `urn:tag:category:place:{record_store,book_store,coffee_shop,bar}`; drop results with no address | id, name, address, affinity |
 
@@ -185,8 +185,9 @@ ranked remote Ladakh first), so we always weight by size.
    - **Unserved demand**: D high, R low → the headline insight
    - **Proven**: D high, R high → anchor dates
    - **Low priority**: D low
-5. **Openers:** rank = `0.6 · fit + 0.4 · local affinity`, where *fit* is the opener's affinity to the headliner in a run with no
-   location signal. Drop acts flagged *national* (they top ≥ 3 cities: Jack Antonoff did in Phase 1). The MusicBrainz badge says
+5. **Openers:** rank = `0.6 · fit + 0.4 · local pull`. *fit* = Jaccard overlap of Qloo genre tags with the headliner (a
+   no-location run was tried in Phase 2 and contained none of the local acts); *local pull* = the opener's affinity
+   min-max scaled within the city. MusicBrainz adds +0.15 for "based here" and −0.25 for "based elsewhere". Drop acts flagged *national* (they top ≥ 3 cities: Jack Antonoff did in Phase 1). The MusicBrainz badge says
    "based here" or "popular here".
 6. **Route:** pick N cities by gap (plus anchors) under constraints, then order them by nearest-neighbour + 2-opt on haversine distance × 1.25 road factor. A leg over `max_drive_km` inserts a day off or drops the city with the lowest gap.
 

@@ -145,6 +145,20 @@ opener-locality eval will measure exactly this.
 | `signal.interests.tags=genre:indie` | CHANGED, overlap 0.67 → optional genre nudge |
 | `feature.explainability=true` | adds `query.explainability.signal…` → **use it for the "why" text** |
 
+## Phase 2 findings (27 Oct, building the MCP server)
+- `GET /entities?entity_ids=<id>` works (returns the full entity incl. `popularity` and tags). `/v2/entities` → 404.
+- `take` max is **50** (`take=100` → 400). Enforced in the allow-list.
+- Insights artist results carry ~50 tags; genre tags sometimes name the city (`Chicago`, `Chicago Hip Hop`) → a free locality hint.
+- A no-location "fit" run (headliner signal + popularity cap, take 50) for Divino Niño contained **none** of the 15 local
+  openers → fit is computed from genre-tag overlap instead.
+- `filter.location.query=Midwest` → **0 cells**; regions must be expanded to states (done in `demand_map`).
+- Hovvdy Midwest (12 states, 3.8 s in parallel): Chicago, Lawrence KS, Detroit, Columbus, Des Moines, Bloomington IN,
+  Minneapolis, Eau Claire WI… college towns surface as intended. Demand scores are compressed (86–100 for the top 12) and
+  single-cell metros with affinity 1.0 rank high → tune in Phase 3 (min cells / activity weight).
+- MusicBrainz: Knox Fortune, Divino Niño, KAINA, Snarls, Vesperteen, Disq → based here ✓; Noah Reid → Toronto (elsewhere ✓);
+  Jack Antonoff → Bergen County (unknown); NNAMDÏ → Los Angeles (elsewhere ✗, he's a Chicago act: MusicBrainz data, track in the eval).
+  MusicBrainz returns 503 "busy" under load → retry with backoff.
+
 ## Still open → moved to Phase 3 (scoring tuning)
 1. Fit-score weights for openers (0.6/0.4 is a first guess) → tune on the opener-fit eval.
 2. Population weighting for heatmap cells (GeoNames metro population) → check that Athens OH still ranks.

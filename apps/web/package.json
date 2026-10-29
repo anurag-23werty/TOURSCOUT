@@ -11,6 +11,7 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
+    "@neondatabase/auth": "0.7.0-beta",
     "leaflet": "1.9.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",

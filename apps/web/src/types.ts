@@ -149,3 +149,13 @@ export interface BaselineStop {
   sponsors: string[];
   why: string;
 }
+
+/** A row in "My tours" (GET /api/me/plans). */
+export interface MyPlan {
+  thread_id: string;
+  artist: string;
+  headline: string;
+  title: string;
+  created: number;
+  updated: number;
+}

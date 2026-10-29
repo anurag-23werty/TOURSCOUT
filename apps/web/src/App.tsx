@@ -1,8 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import { signInEnabled, useAccount } from "./auth";
+import { AccountMenu } from "./components/AccountMenu";
 import { CheckpointCard } from "./components/Checkpoints";
 import { CityCard } from "./components/CityCard";
 import { Compare, Outreach } from "./components/Extras";
+import { MyTours } from "./components/MyTours";
+import { SignIn } from "./components/SignIn";
 import { StartPanel } from "./components/StartPanel";
 import { TourMap } from "./components/TourMap";
 import { TourPoster } from "./components/TourPoster";
@@ -10,9 +14,15 @@ import { Trace } from "./components/Trace";
 import { useTour } from "./useTour";
 
 type Tab = "tour" | "compare" | "drafts";
+type View = "plan" | "sign_in" | "tours";
 
 export function App() {
-  const { run, start, answer, refine, reset } = useTour();
+  const { run, start, answer, refine, open, reset } = useTour();
+  const { state: account, signOut } = useAccount();
+  const [view, setView] = useState<View>("plan");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const claimed = useRef(false);
   const [active, setActive] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>("tour");
   const [change, setChange] = useState("");
@@ -22,6 +32,40 @@ export function App() {
     if (run.phase === "done") setActive(0);
   }, [run.phase, run.plan]);
 
+  // Once signed in (email, or back from Google), move this browser's guest tours into the account.
+  useEffect(() => {
+    if (account.status !== "signed_in" || claimed.current) return;
+    claimed.current = true;
+    api.claimGuestTours().then(
+      (moved) => moved > 0 && setNotice(`Saved ${moved} tour${moved > 1 ? "s" : ""} from this browser to your account.`),
+      () => {},
+    );
+  }, [account.status]);
+  useEffect(() => {
+    if (account.status === "guest") claimed.current = false;
+  }, [account.status]);
+
+  const goPlan = () => {
+    setView("plan");
+    reset();
+  };
+
+  const deleteAccount = async () => {
+    try {
+      const res = await (await api.deleteAccount()).json();
+      await signOut();
+      setConfirmDelete(false);
+      goPlan();
+      setNotice(
+        res.login_deleted
+          ? "Your account and all your tours are deleted."
+          : "Your tours are deleted. Removing the login itself isn't set up on this server yet.",
+      );
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : "Couldn't delete the account.");
+    }
+  };
+
   const plan = run.plan;
   const stop = plan && active != null ? plan.stops[active] : null;
 
@@ -29,18 +73,83 @@ export function App() {
     <div className="min-h-screen lg:grid lg:h-screen lg:grid-cols-[minmax(0,560px)_1fr]">
       <main className="flex flex-col lg:h-screen lg:overflow-y-auto">
         <header className="flex items-center justify-between px-5 pt-5 sm:px-8">
-          <button type="button" onClick={reset} className="flex items-center gap-2" aria-label="TourScout, start over">
+          <button type="button" onClick={goPlan} className="flex items-center gap-2" aria-label="TourScout, start over">
             <img src="/favicon.svg" alt="" className="size-7" />
             <span className="font-display text-xl font-extrabold tracking-tight">TourScout</span>
           </button>
-          {run.phase !== "idle" && (
-            <button type="button" onClick={reset} className="text-sm font-semibold underline underline-offset-4">
-              New plan
-            </button>
-          )}
+          <div className="flex items-center gap-4">
+            {view === "plan" && run.phase !== "idle" && (
+              <button type="button" onClick={goPlan} className="text-sm font-semibold underline underline-offset-4">
+                New plan
+              </button>
+            )}
+            {signInEnabled && (
+              <AccountMenu
+                state={account}
+                onSignIn={() => setView("sign_in")}
+                onTours={() => setView("tours")}
+                onSignOut={async () => {
+                  await signOut();
+                  goPlan();
+                }}
+                onDelete={() => setConfirmDelete(true)}
+              />
+            )}
+          </div>
         </header>
 
         <div className="flex-1 space-y-6 px-5 py-6 sm:px-8">
+          {notice && (
+            <div role="status" className="flex items-start justify-between gap-3 rounded-2xl bg-yellow/40 p-4 text-sm font-semibold">
+              <span>{notice}</span>
+              <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss" className="font-bold">
+                ×
+              </button>
+            </div>
+          )}
+
+          {confirmDelete && account.status === "signed_in" && (
+            <div role="alertdialog" aria-labelledby="del-title" className="rounded-2xl border-2 border-pink bg-sheet p-5">
+              <p id="del-title" className="font-semibold">Delete your account?</p>
+              <p className="mt-1 text-ink-soft">
+                This deletes {account.account.email}, every saved tour and its drafts. It can't be undone.
+              </p>
+              <div className="mt-3 flex gap-3">
+                <button type="button" onClick={deleteAccount} className="rounded-full bg-pink-deep px-5 py-2 font-semibold text-white">
+                  Delete everything
+                </button>
+                <button type="button" onClick={() => setConfirmDelete(false)} className="rounded-full border-2 border-ink px-5 py-2 font-semibold">
+                  Keep my account
+                </button>
+              </div>
+            </div>
+          )}
+
+          {view === "sign_in" && account.status !== "signed_in" && (
+            <SignIn onDone={() => setView("tours")} onGuest={() => setView("plan")} />
+          )}
+
+          {view === "tours" && (
+            <MyTours
+              signedIn={account.status === "signed_in"}
+              onNew={goPlan}
+              onOpen={(id) => {
+                setView("plan");
+                open(id);
+              }}
+            />
+          )}
+
+          {view === "plan" && <>
+          {run.phase === "idle" && account.status === "guest" && signInEnabled && (
+            <p className="text-sm text-ink-soft">
+              Planning as a guest.{" "}
+              <button type="button" onClick={() => setView("sign_in")} className="font-semibold text-ink underline underline-offset-4">
+                Sign in
+              </button>{" "}
+              to keep your tours on every device.
+            </p>
+          )}
           {run.phase === "idle" && <StartPanel busy={working} onStart={start} />}
 
           {run.phase !== "idle" && !plan && <Trace steps={run.steps} working={working} />}
@@ -116,12 +225,12 @@ export function App() {
                   </form>
 
                   <div className="flex flex-wrap gap-4 text-sm font-semibold">
-                    <a href={api.exportUrl(run.threadId, "csv")} className="underline underline-offset-4">
+                    <button type="button" onClick={() => api.download(run.threadId!, "csv")} className="underline underline-offset-4">
                       Download as spreadsheet (CSV)
-                    </a>
-                    <a href={api.exportUrl(run.threadId, "ics")} className="underline underline-offset-4">
+                    </button>
+                    <button type="button" onClick={() => api.download(run.threadId!, "ics")} className="underline underline-offset-4">
                       Add dates to your calendar (.ics)
-                    </a>
+                    </button>
                   </div>
                 </>
               )}
@@ -129,6 +238,7 @@ export function App() {
               {tab === "drafts" && <Outreach plan={plan} />}
             </>
           )}
+          </>}
         </div>
       </main>
 

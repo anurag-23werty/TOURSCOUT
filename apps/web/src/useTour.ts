@@ -100,10 +100,31 @@ export function useTour() {
     [guard, onEvent],
   );
 
+  /** Reopen a saved tour from "My tours": its plan, or the checkpoint it was waiting on. */
+  const open = useCallback(
+    (threadId: string) => {
+      threadRef.current = threadId;
+      setRun({ ...EMPTY, phase: "running", threadId });
+      return guard(async () => {
+        const state = await api.state(threadId);
+        setRun({
+          phase: state.plan ? "done" : state.interrupt ? "waiting" : "error",
+          threadId,
+          steps: state.events,
+          checkpoint: state.plan ? null : state.interrupt,
+          plan: state.plan,
+          metros: state.metros,
+          error: state.plan || state.interrupt ? null : "This tour didn't finish. Plan it again from the start.",
+        });
+      });
+    },
+    [guard],
+  );
+
   const reset = useCallback(() => {
     threadRef.current = null;
     setRun(EMPTY);
   }, []);
 
-  return { run, start, answer, refine, reset };
+  return { run, start, answer, refine, open, reset };
 }

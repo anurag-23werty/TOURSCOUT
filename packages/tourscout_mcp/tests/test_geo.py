@@ -93,3 +93,10 @@ async def test_musicbrainz_picks_exact_high_score_match_and_caches() -> None:
     assert first["mbid"] == "m1" and first["begin_area"] == "Columbus"
     assert second == first and len(calls) == 1
     assert calls[0].headers["User-Agent"] == "TourScout-test/0"
+
+
+def test_big_city_keeps_its_edge_cells() -> None:
+    index = MetroIndex([City("Bengaluru", "IN", "19", 12.97, 77.59, 9_800_000), City("Channapatna", "IN", "19", 12.65, 77.21, 70_000),
+                        City("Lawrence", "US", "KS", 38.97, -95.24, 95_000), City("Kansas City", "US", "MO", 39.10, -94.58, 2_000_000)])
+    assert index.nearest(12.568, 77.52).name == "Bengaluru"  # real Qloo cell centre: 35 km from the town, 45 km from the city
+    assert index.nearest(38.97, -95.25).name == "Lawrence"  # college town 58 km from a big city keeps its own cells

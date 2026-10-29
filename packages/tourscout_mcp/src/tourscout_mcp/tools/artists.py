@@ -16,7 +16,7 @@ OPENER_LOCATION_WEIGHT = 25  # Phase 1: the default weight returned mostly non-l
 OPENER_POPULARITY_MARGIN = 0.05  # openers must be smaller than the headliner
 FIT_WEIGHT, LOCAL_WEIGHT = 0.6, 0.4
 BADGE_BONUS = {"based_here": 0.15, "unknown": 0.0, "elsewhere": -0.25}
-NATIONAL_MIN_CITIES = 3  # an act in the top list of ≥ 3 cities is a national act, not a local one
+NATIONAL_MIN_CITIES = 3  # an act listed in ≥ 3 cities (and ≥ half of them) is a national act, not a local one
 
 
 async def resolve_artist(deps: Deps, name: str, take: int = 5) -> dict[str, Any]:
@@ -75,9 +75,11 @@ async def find_openers(
 
     raw = await gather([fetch(c) for c in cities])
 
-    # National acts: show up near the top in many cities (Jack Antonoff in Columbus and Chicago in Phase 1).
-    tops = Counter(a["entity_id"] for rows in raw for a in rows[: take * 2])
-    national = {eid for eid, n in tops.items() if n >= NATIONAL_MIN_CITIES} if len(cities) >= NATIONAL_MIN_CITIES else set()
+    # National acts show up in many cities' lists (Jack Antonoff in Columbus and Chicago in Phase 1; Jasleen Royal in
+    # 4 of 6 Indian cities in Phase 3, after ranking pushed her up from below the top 6). Count the whole list.
+    seen_in = Counter(a["entity_id"] for rows in raw for a in rows)
+    min_cities = max(NATIONAL_MIN_CITIES, (len(cities) + 1) // 2)
+    national = {eid for eid, n in seen_in.items() if n >= min_cities} if len(cities) >= NATIONAL_MIN_CITIES else set()
 
     out = []
     for city, rows in zip(cities, raw):
@@ -86,7 +88,7 @@ async def find_openers(
         ranked, dropped = [], []
         for a in rows:
             if a["entity_id"] in national:
-                dropped.append({"name": a.get("name"), "reason": f"national act (top list in ≥ {NATIONAL_MIN_CITIES} cities)"})
+                dropped.append({"name": a.get("name"), "reason": f"national act (listed in {seen_in[a['entity_id']]} cities)"})
                 continue
             row = trim_artist(a)
             row["fit"] = genre_fit(head_genres, genre_tags(a))

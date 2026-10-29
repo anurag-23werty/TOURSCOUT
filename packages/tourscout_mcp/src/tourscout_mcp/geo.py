@@ -5,7 +5,7 @@ think in cities, so we group GeoNames cities into metros and roll cells up to th
 
 1. Metros: walk cities from largest to smallest; a city within a bigger city's radius joins it (Evanston → Chicago),
    otherwise it starts its own metro. Small college towns far from big cities (Athens OH) stay separate on purpose.
-2. Cells: each cell joins the nearest metro centre within MAX_CELL_KM.
+2. Cells: each cell joins the metro with the strongest pull (population / distance²) within MAX_CELL_KM.
 3. Per metro: popularity-weighted mean affinity, summed popularity (an audience-size proxy) and the cell count.
 """
 
@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 MAX_CELL_KM = 50.0
+GRAVITY_SOFTENING_KM = 5.0
 BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz"
 
 
@@ -150,11 +151,19 @@ class MetroIndex:
         return max(hosts, key=lambda m: m.population, default=None)
 
     def nearest(self, lat: float, lon: float, max_km: float = MAX_CELL_KM) -> Metro | None:
-        best, best_km = None, max_km
+        """The metro with the strongest pull on a point within max_km: population / (distance + 5 km)².
+
+        Pure nearest-centre handed Bengaluru's outskirts to small towns 5 km away (Channapatna, 70k) instead of the
+        9.8M city 45 km away; gravity keeps a big city's edge cells with the big city.
+        """
+        best, best_pull = None, 0.0
         for metro in self._grid.near(lat, lon, max_km):
             km = haversine_km((lat, lon), (metro.lat, metro.lon))
-            if km <= best_km:
-                best, best_km = metro, km
+            if km > max_km:
+                continue
+            pull = metro.population / (km + GRAVITY_SOFTENING_KM) ** 2
+            if pull > best_pull:
+                best, best_pull = metro, pull
         return best
 
     def find(self, name: str, country: str | None = None) -> Metro | None:

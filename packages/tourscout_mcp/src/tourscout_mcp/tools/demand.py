@@ -33,7 +33,8 @@ def expand_region(region: str) -> list[str]:
     parts = [p.strip() for p in region.replace("+", ",").replace(" and ", ",").split(",") if p.strip()]
     out: list[str] = []
     for part in parts:
-        for name in REGIONS.get(fold(part).removeprefix("the "), [part]):
+        key = fold(part).removeprefix("the ").removeprefix("us ").removeprefix("u.s. ")
+        for name in REGIONS.get(key, [part]):
             if name not in out:
                 out.append(name)
     return out

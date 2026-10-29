@@ -58,7 +58,8 @@ class QlooClient:
         base_url: str = "https://hackathon.api.qloo.com",
         cache: Cache | None = None,
         timeout_s: float = 20.0,
-        retries: int = 3,
+        retries: int = 4,
+        max_concurrency: int = 4,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         if not api_key:
@@ -68,6 +69,8 @@ class QlooClient:
         )
         self.cache = cache or NoCache()
         self.retries = retries
+        # A tour fan-out is ~60 requests. Measured: 4+ in flight starts returning 429s, so cap requests in flight.
+        self._slots = anyio.Semaphore(max_concurrency)
         self.calls = 0  # real network calls, for tests and traces
 
     async def aclose(self) -> None:
@@ -83,7 +86,8 @@ class QlooClient:
 
         for attempt in range(self.retries):
             try:
-                resp = await self.http.get(path, params=clean)
+                async with self._slots:
+                    resp = await self.http.get(path, params=clean)
             except httpx.TransportError as exc:
                 if attempt == self.retries - 1:
                     raise QlooError(0, f"network error: {exc.__class__.__name__}") from exc

@@ -132,6 +132,7 @@ def test_expand_region() -> None:
     assert demand.expand_region("Ohio") == ["Ohio"]
     assert demand.expand_region("the PNW, Idaho") == ["Oregon", "Washington", "Idaho"]
     assert "Wisconsin" in demand.expand_region("midwest")
+    assert demand.expand_region("US Midwest") == demand.expand_region("Midwest")
 
 
 async def test_server_exposes_seven_read_only_tools() -> None:

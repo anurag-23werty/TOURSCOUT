@@ -11,6 +11,9 @@ qloo_responses/
 **/recordings/
 evals/reports/raw/
 
+# Working notes (kept locally, not published)
+docs/*.md
+
 # Python
 __pycache__/
 *.pyc

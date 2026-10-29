@@ -23,8 +23,10 @@ function FitBounds({ points }: { points: [number, number][] }) {
   const key = points.map((p) => p.join(",")).join("|");
   useEffect(() => {
     map.invalidateSize(); // the container may have been resized (mobile layout) since the map mounted
+    // Less padding on a phone: 40 px each side pushed a Midwest route down a whole zoom level at 390 px wide.
+    const pad = map.getSize().x < 500 ? 20 : 40; // ≥ 20 so the 26 px stop pins at the edges aren't cut off
     if (points.length === 1) map.setView(points[0], 8);
-    else if (points.length > 1) map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 9 });
+    else if (points.length > 1) map.fitBounds(L.latLngBounds(points), { padding: [pad, pad], maxZoom: 9 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, map]);
   return null;
@@ -41,7 +43,14 @@ export function TourMap({ metros, stops, active, onSelect }: Props) {
   );
 
   return (
-    <MapContainer center={[39.5, -92]} zoom={4} scrollWheelZoom className="h-full w-full" aria-label="Map of demand and the tour route">
+    <MapContainer
+      center={[39.5, -92]}
+      zoom={4}
+      zoomSnap={0.25}
+      scrollWheelZoom
+      className="h-full w-full"
+      aria-label="Map of demand and the tour route"
+    >
       {/* Esri's light-gray canvas needs no API key (CARTO's basemaps started requiring one). */}
       <TileLayer
         attribution="Tiles &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors"

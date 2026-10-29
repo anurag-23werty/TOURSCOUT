@@ -276,17 +276,24 @@ sequenceDiagram
 
 ## 8. Backend surface
 
+FastAPI app in `apps/api/tourscout_api/api/app.py`; full reference with SSE event formats in [`docs/api.md`](docs/api.md).
+
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/sessions` | guest session → `thread_id` |
-| POST | `/api/chat` | message + optional upload refs → **SSE** agent events |
-| POST | `/api/resume` | answer a checkpoint (confirm artist, pick cities) |
-| POST | `/api/upload` | screenshot/CSV → temporary ref (deleted after parsing) |
-| POST | `/api/compare` | the LLM-only baseline for the same request |
-| GET | `/api/personas` | one-click demo artists |
-| GET | `/api/export/{thread_id}.{csv,ics}` | tour plan export |
-| GET | `/health` | uptime ping |
-| — | `/mcp` | public, rate-limited TourScout MCP endpoint |
+| POST | `/api/sessions` | guest session (`X-Session-Id`), owns its plan threads, 6 h |
+| POST | `/api/upload` | screenshot/CSV → single-use ref, bytes sniffed, ≤ 2 MB, memory only |
+| POST | `/api/plans` | start a plan (free text or persona) → **SSE** `thread, step…, interrupt | plan | error` |
+| POST | `/api/plans/{id}/resume` | answer a checkpoint → SSE |
+| POST | `/api/plans/{id}/refine` | "skip Detroit" on the same thread → SSE |
+| GET | `/api/plans/{id}` | state, plan, events, LLM call log |
+| POST | `/api/plans/{id}/compare` | LLM-only baseline for the same intake |
+| POST | `/api/plans/{id}/outreach` | sponsor pitch / opener DM on demand |
+| GET | `/api/plans/{id}/export.{csv,ics}` | downloads |
+| GET | `/api/personas` · `/health` | demo artists · uptime + key checks |
+| * | `/mcp` | the TourScout MCP server mounted in the same process, rate-limited |
+
+Guards: per-IP sliding-window limits + a global daily plan budget (429 + `Retry-After`), max 3 concurrent plans, session
+ownership on every thread, no stack traces in responses. Checkpoints: SQLite locally, Postgres when `DATABASE_URL` is set.
 
 ---
 

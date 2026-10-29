@@ -19,6 +19,12 @@ Needs `QLOO_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY` in the repo-root `.env`, 
 Speed tip: when `gemini-flash-latest` is overloaded, `GEMINI_MAIN_MODEL=gemini-flash-lite-latest` brought a 10-date plan from
 56 s to 17 s in our test.
 
+## API
+```bash
+uv run tourscout-api            # http://127.0.0.1:8000, docs at /docs, MCP at /mcp
+```
+Endpoints and the SSE event format: [`docs/api.md`](../../docs/api.md).
+
 ## Layout
 | Path | What |
 |---|---|
@@ -33,8 +39,12 @@ Speed tip: when `gemini-flash-latest` is overloaded, `GEMINI_MAIN_MODEL=gemini-f
 | `tourscout_api/agent/prompts/*.md` | every prompt, as a readable file |
 | `tourscout_api/baseline/` | the same request with no tools (Compare tab, evals) |
 | `tourscout_api/cli.py` | the command above |
+| `tourscout_api/api/app.py` | FastAPI routes, SSE streaming, `/mcp` mount |
+| `tourscout_api/api/{sessions,ratelimit,uploads,settings}.py` | guest sessions, limits, upload validation, env settings |
+| `tourscout_api/core/checkpoint.py` | SQLite / Postgres / memory checkpointer |
+| `tourscout_api/personas.py` | demo + eval personas → agent inputs |
 
 ## Test
 ```bash
-uv run pytest          # 46 tests: scoring, model fallback, reach, validator, outputs, agent graph (fake tools + fake LLM)
+uv run pytest          # 63 tests: scoring, model fallback, reach, validator, outputs, agent graph, API (fake tools + fake LLM)
 ```

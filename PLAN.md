@@ -114,16 +114,24 @@ missing venue data.
 ---
 
 ## Phase 4: Backend API (Day 11)
-- [ ] FastAPI routes (§8 of the architecture) with SSE streaming of agent events.
-- [ ] Guest sessions, upload handling (size/type limits, delete after parse).
-- [ ] Rate limits: per IP, per session, global daily cap (sized from `docs/models.md`).
+- [x] FastAPI app: sessions, personas, upload, plans (SSE), resume, refine, state, compare, outreach, CSV/ICS export, health, `/mcp` mounted.
+- [x] Durable checkpoints: SQLite locally, Postgres via `DATABASE_URL` (tested: a new agent resumes a saved run).
+- [x] Guest sessions with thread ownership; uploads sniffed by bytes, ≤ 2 MB, single use, memory only.
+- [x] Rate limits: per IP (plans, LLM actions, uploads, MCP), global daily plan budget, 3 concurrent plans.
+- [x] Fixes found on the way: first drive from home no longer drops cities; refine doesn't re-ask "pick cities";
+      sponsor pitch + opener DM are written in parallel.
+- [ ] Langfuse → Phase 7 (needs keys; `llm_calls` + `events` are already returned by `GET /api/plans/{id}`).
+- [ ] Postgres checkpointer against a real Neon database → Phase 7 (code path ready, only SQLite exercised so far).
 
-**Exit:** the whole flow runs via HTTP with streamed events.
+**Exit ✅ (29 Oct):** `uv run tourscout-api`, then the Hovvdy persona over HTTP streamed every step as SSE and returned the
+plan; CSV export and `/mcp` `initialize` worked against the same server.
 
 | Step | `git add` | Commit message |
 |---|---|---|
-| 4.1 Routes + SSE | `git add apps/api/routes/ apps/api/main.py apps/api/tests/test_routes.py` | `feat(api): chat, resume, upload, compare and export endpoints with SSE` |
-| 4.2 Limits | `git add apps/api/core/ratelimit.py apps/api/core/sessions.py` | `feat(api): guest sessions and rate limits` |
+| 4.1 Durable runs, streaming + agent fixes | `git add apps/api/pyproject.toml apps/api/uv.lock apps/api/tourscout_api/core/checkpoint.py apps/api/tourscout_api/agent/runner.py apps/api/tourscout_api/agent/graph.py apps/api/tourscout_api/agent/schemas.py apps/api/tourscout_api/scoring/route.py apps/api/tests/test_agent.py apps/api/tests/test_scoring.py` | `feat(agent): durable checkpoints, event streaming, and routing/refine fixes` |
+| 4.2 Sessions, limits, uploads | `git add apps/api/tourscout_api/api/__init__.py apps/api/tourscout_api/api/settings.py apps/api/tourscout_api/api/sessions.py apps/api/tourscout_api/api/ratelimit.py apps/api/tourscout_api/api/uploads.py apps/api/tests/test_api_limits.py` | `feat(api): guest sessions, rate limits and safe upload handling` |
+| 4.3 Routes + SSE | `git add apps/api/tourscout_api/personas.py apps/api/tourscout_api/cli.py apps/api/tourscout_api/api/app.py apps/api/tests/test_api.py` | `feat(api): plan, resume, refine, compare, outreach and export endpoints with SSE and /mcp` |
+| 4.4 Docs | `git add docs/api.md .env.example ARCHITECTURE.md PLAN.md apps/api/README.md` | `docs(api): endpoint and SSE reference, settings and Phase 4 status` |
 
 ---
 

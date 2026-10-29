@@ -20,6 +20,8 @@ services:
         sync: false
       - key: TOURSCOUT_CACHE_URL   # the same Neon string: private Qloo cache that survives restarts
         sync: false
+      - key: NEON_AUTH_URL         # Neon console → Auth → Auth URL; empty = guests only
+        sync: false
       - key: WEB_ORIGINS           # the Vercel URL, e.g. https://tourscout.vercel.app
         sync: false
       - key: LANGFUSE_PUBLIC_KEY

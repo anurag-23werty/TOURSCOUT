@@ -26,6 +26,9 @@ class ApiSettings:
     plans_per_ip_per_hour: int = field(default_factory=lambda: _int("LIMIT_PLANS_PER_IP_HOUR", 6))
     plans_per_day: int = field(default_factory=lambda: _int("LIMIT_PLANS_PER_DAY", 150))
     llm_actions_per_ip_per_hour: int = field(default_factory=lambda: _int("LIMIT_LLM_ACTIONS_PER_IP_HOUR", 30))
+    # Signed-in users are counted per account instead of per IP (shared campus/office IPs), with more room.
+    plans_per_user_per_hour: int = field(default_factory=lambda: _int("LIMIT_PLANS_PER_USER_HOUR", 30))
+    llm_actions_per_user_per_hour: int = field(default_factory=lambda: _int("LIMIT_LLM_ACTIONS_PER_USER_HOUR", 60))
     uploads_per_ip_per_hour: int = field(default_factory=lambda: _int("LIMIT_UPLOADS_PER_IP_HOUR", 10))
     concurrent_plans: int = field(default_factory=lambda: _int("LIMIT_CONCURRENT_PLANS", 3))
     queue_timeout_s: float = field(default_factory=lambda: float(os.getenv("QUEUE_TIMEOUT_S") or 150))

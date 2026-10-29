@@ -1,21 +1,20 @@
-"""Guest sessions: no accounts. A session owns the plan threads it started; it expires after session_ttl_s.
+"""Guest sessions: an anonymous id per browser, expiring after session_ttl_s.
 
-Kept in memory on purpose (one API instance on the free tier). The plans themselves live in the checkpointer, so a restart
-only forgets which browser owns which thread.
+Which plans a guest owns is stored in the plans table under "guest:<id>" (api/plans.py), so signing in can move them to
+the account. The ids themselves are kept in memory (one API instance): a restart starts guests on a fresh session.
 """
 
 from __future__ import annotations
 
 import secrets
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
 class Session:
     id: str
     created: float
-    threads: set[str] = field(default_factory=set)
 
 
 class SessionStore:
@@ -35,14 +34,6 @@ class SessionStore:
             del self._sessions[session.id]
             return None
         return session
-
-    def new_thread(self, session: Session) -> str:
-        thread_id = secrets.token_hex(8)
-        session.threads.add(thread_id)
-        return thread_id
-
-    def owns(self, session: Session, thread_id: str) -> bool:
-        return thread_id in session.threads
 
     def _sweep(self) -> None:
         now = self.clock()

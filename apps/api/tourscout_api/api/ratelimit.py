@@ -43,13 +43,15 @@ class Limiter:
         self.per_key = {name: SlidingWindow(n, w, clock) for name, (n, w) in per_key.items()}
         self.daily = {name: SlidingWindow(n, 86_400, clock) for name, n in global_daily.items()}
 
-    def check(self, name: str, key: str) -> Decision:
+    def check(self, name: str, key: str, window: str | None = None) -> Decision:
+        """window: which per-key limit to use (e.g. "plan_user" for signed-in users); the daily cap is shared."""
+        per_key = window or name
         if name in self.daily:
             d = self.daily[name].check("*", consume=False)
             if not d.allowed:
                 return Decision(False, d.retry_after_s, f"the demo's daily {name} budget is used up; try again later")
-        if name in self.per_key:
-            d = self.per_key[name].check(key)
+        if per_key in self.per_key:
+            d = self.per_key[per_key].check(key)
             if not d.allowed:
                 return Decision(False, d.retry_after_s, f"too many {name} requests from you; wait {d.retry_after_s}s")
         if name in self.daily:

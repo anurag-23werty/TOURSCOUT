@@ -41,12 +41,18 @@ def test_blocked_per_ip_requests_dont_use_the_daily_budget() -> None:
     assert limiter.check("plan", "b").allowed  # …didn't consume the global cap
 
 
-def test_sessions_expire_and_own_threads() -> None:
+def test_signed_in_users_get_their_own_window_but_share_the_daily_cap() -> None:
+    limiter = Limiter({"plan": (1, 3600), "plan_user": (3, 3600)}, {"plan": 4}, clock=Clock())
+    assert limiter.check("plan", "1.2.3.4").allowed and not limiter.check("plan", "1.2.3.4").allowed
+    assert all(limiter.check("plan", "user:u1", window="plan_user").allowed for _ in range(3))
+    assert not limiter.check("plan", "user:u2", window="plan_user").allowed  # daily cap of 4 reached
+
+
+def test_sessions_expire() -> None:
     clock = Clock()
     store = SessionStore(ttl_s=100, clock=clock)
     s = store.create()
-    t = store.new_thread(s)
-    assert store.get(s.id) is s and store.owns(s, t) and not store.owns(s, "someone-else")
+    assert store.get(s.id) is s and store.get("someone-else") is None
     clock.t += 101
     assert store.get(s.id) is None
 

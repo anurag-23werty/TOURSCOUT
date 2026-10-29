@@ -100,6 +100,10 @@ class TourAgent:
     async def refine(self, thread_id: str, request: str) -> dict[str, Any]:
         return await self._run(thread_id, {"refine_request": request})
 
+    async def delete(self, thread_id: str) -> None:
+        """Forget a run entirely (its checkpoints and writes), e.g. when its owner deletes the tour."""
+        await self.graph.checkpointer.adelete_thread(thread_id)
+
     async def aclose(self) -> None:
         await self.ctx.llm.aclose()
         await self.ctx.tools.aclose()

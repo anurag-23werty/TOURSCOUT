@@ -67,7 +67,7 @@ Repo public with MIT license, keys received (Qloo, Gemini), accounts, docs scaff
 - [x] MusicBrainz helper: artist → home area (1 req/s, cached) for the "local" badge.
 - [x] Tools: `resolve_artist`, `search_tags`, `demand_map`, `find_venues`, `find_openers`, `find_sponsors`, `find_promo_spots`, with clear descriptions.
 - [x] Tests: unit tests with *synthetic* fixtures (no Qloo data), one live smoke test behind a flag.
-- [x] Write `docs/mcp-claude-desktop.md`; stdio + HTTP verified with a real MCP client. [ ] Claude Desktop check (by hand).
+- [x] Write `docs/mcp-claude-desktop.md`; stdio + HTTP verified with a real MCP client; Claude Desktop exit test passed (29 Oct).
 
 **Exit:** Claude Desktop answers "Where should Hovvdy tour in the Midwest, and who should open in Chicago?" with grounded results.
 

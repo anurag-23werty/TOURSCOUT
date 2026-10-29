@@ -7,6 +7,8 @@ from typing import Any
 
 import pytest
 
+from langgraph.types import Command
+
 from tourscout_api.agent.graph import AgentContext
 from tourscout_api.agent.runner import TourAgent
 from tourscout_api.agent.schemas import Brief, Intake, Pitch, RefineOps, SimilarArtists, StopPlan
@@ -216,3 +218,44 @@ async def test_refine_reruns_from_scoring_on_same_thread() -> None:
     metros = [s["metro"] for s in after["state"]["plan"]["stops"]]
     assert "Detroit, MI" not in metros and after["done"]
     assert any(e["node"] == "refine" for e in after["state"]["events"])
+
+
+async def test_stream_yields_steps_then_exactly_one_outcome() -> None:
+    a, _, _ = agent()
+    payload = TourAgent.start_payload(intake=HOVVDY)
+    kinds = [k async for k, _ in a.stream("t9", payload)]
+    assert kinds == ["step", "step", "interrupt"]  # intake, resolve, then ⏸ confirm_artist
+    resumed = [(k, v) async for k, v in a.stream("t9", Command(resume={"choice": "HV"}))]
+    assert resumed[-1][0] == "interrupt" and resumed[-1][1]["type"] == "pick_cities"
+    final = [(k, v) async for k, v in a.stream("t9", Command(resume={"accept": True}))]  # {} would not resume
+    assert final[-1][0] == "plan" and final[-1][1]["stops"]
+
+
+async def test_stream_turns_user_errors_into_an_error_event() -> None:
+    a, _, _ = agent()
+    out = [(k, v) async for k, v in a.stream("t10", TourAgent.start_payload(intake={**HOVVDY, "artist": "Nobody", "sounds_like": ["Nobody Else"]}, auto_approve=True))]
+    assert out[-1][0] == "error" and "on Qloo" in out[-1][1]
+
+
+async def test_sqlite_checkpointer_survives_a_new_agent(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from tourscout_api.core import checkpoint
+
+    monkeypatch.setattr(checkpoint, "DEFAULT_SQLITE", tmp_path / "cp.sqlite")
+    async with checkpoint.open_checkpointer("") as saver:
+        llm, tools = FakeLLM(), FakeTools()
+        first = TourAgent(AgentContext(llm, tools), saver)  # type: ignore[arg-type]
+        await first.start("t11", intake=HOVVDY)
+    async with checkpoint.open_checkpointer("") as saver:  # "restart": new connection, new agent
+        second = TourAgent(AgentContext(FakeLLM(), FakeTools()), saver)  # type: ignore[arg-type]
+        assert (await second.state("t11"))["interrupt"]["type"] == "confirm_artist"
+        done = await second.resume("t11", {"choice": "HV"})
+        assert done["interrupt"]["type"] == "pick_cities"
+
+
+async def test_refine_with_human_in_the_loop_doesnt_ask_again() -> None:
+    a, _, _ = agent()
+    await a.start("t12", intake={**HOVVDY, "n_shows": 5})
+    await a.resume("t12", {"choice": "HV"})
+    await a.resume("t12", {"accept": True})
+    after = await a.refine("t12", "skip Detroit")
+    assert after["done"] and after["interrupt"] is None

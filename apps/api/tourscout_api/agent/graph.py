@@ -210,8 +210,10 @@ def build_graph(ctx: AgentContext, checkpointer: Any = None):  # type: ignore[no
                      event("score", f"picked {len(chosen)} cities: {counts}"))
 
     async def pick_cities(state: TourState) -> dict[str, Any]:
-        if state.get("auto_approve") or state.get("swaps"):  # the user already approved; a swap is the agent's fix
-            return {}
+        # Skip when there's no human, after a venue swap (the agent's own fix), or after a refine (the user just said
+        # what they want).
+        if state.get("auto_approve") or state.get("swaps") or state.get("refined"):
+            return {"refined": False}
         answer = interrupt({
             "type": "pick_cities",
             "question": "These cities have the best mix of demand and reach. Change any?",
@@ -354,19 +356,28 @@ def build_graph(ctx: AgentContext, checkpointer: Any = None):  # type: ignore[no
         plan["composed_by"] = composed_by
         plan["outreach"] = {}
         if ctx.outreach:
+            from tourscout_mcp.tools import gather
+
             brand = next((b for s in plan["stops"] for b in s["sponsors"]), None)
             first = next((s for s in plan["stops"] if s["openers"]), None)
-            try:
+
+            async def pitch() -> None:
                 if brand:
-                    plan["outreach"]["sponsor_pitch"] = {
-                        "brand": brand["name"],
-                        **(await sponsor_pitch(llm, plan, brand["id"], state.get("national_sponsors", []))).model_dump(),
-                    }
+                    msg = await sponsor_pitch(llm, plan, brand["id"], state.get("national_sponsors", []))
+                    plan["outreach"]["sponsor_pitch"] = {"brand": brand["name"], **msg.model_dump()}
+
+            async def dm() -> None:
                 if first:
-                    dm = await opener_dm(llm, plan, first["metro"])
-                    plan["outreach"]["opener_dm"] = {"opener": first["openers"][0]["name"], "city": first["metro"], **dm.model_dump()}
-            except (LLMUnavailable, ValueError) as exc:
-                plan["outreach"]["error"] = str(exc)
+                    msg = await opener_dm(llm, plan, first["metro"])
+                    plan["outreach"]["opener_dm"] = {"opener": first["openers"][0]["name"], "city": first["metro"], **msg.model_dump()}
+
+            async def safe(job) -> None:  # type: ignore[no-untyped-def]
+                try:
+                    await job()
+                except (LLMUnavailable, ValueError) as exc:
+                    plan["outreach"].setdefault("errors", []).append(str(exc))
+
+            await gather([lambda: safe(pitch), lambda: safe(dm)])  # the two messages are independent: write them in parallel
         return merge({"plan": plan}, event("outputs", f"plan ready ({plan['composed_by']})"), calls_since(n))
 
     # ------------------------------------------------------------ refine
@@ -387,7 +398,7 @@ def build_graph(ctx: AgentContext, checkpointer: Any = None):  # type: ignore[no
             if getattr(ops, field) is not None:
                 intake_[field] = getattr(ops, field)
         changed = ops.model_dump(exclude_defaults=True)
-        return merge({"intake": intake_, "refine_request": "", "refine_next": nxt, "attempts": 0, "violations": [], "swaps": 0},
+        return merge({"intake": intake_, "refine_request": "", "refine_next": nxt, "attempts": 0, "violations": [], "swaps": 0, "refined": True},
                      event("refine", f"{changed or 'no structured change'} → rerun from {nxt}"), calls_since(n))
 
     # ------------------------------------------------------------ wiring

@@ -112,3 +112,9 @@ def test_rest_day_after_five_shows() -> None:
     near = [Stop(f"City {i}", 41.88 + i * 0.5, -87.63, priority=i) for i in range(6)]
     route = plan_route(HOME, near, date(2027, 4, 1), max_drive_km=1000)
     assert route.days_off == ["2027-04-06"] and route.stops[-1].date == "2027-04-07"
+
+
+def test_long_drive_from_home_never_drops_cities() -> None:
+    austin = (30.27, -97.74)  # ~1,900 road km from Chicago
+    route = plan_route(austin, stops("Chicago, IL", "Detroit, MI"), date(2027, 4, 1), max_drive_km=650)
+    assert not route.dropped and route.stops[0].drive_km > 1300

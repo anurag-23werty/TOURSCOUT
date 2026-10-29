@@ -98,6 +98,7 @@ class TourState(TypedDict, total=False):
     refine_next: str
     no_venue_cities: list[str]  # swapped out because Qloo has no venue data there
     swaps: int
+    refined: bool  # set by refine so the pick-cities checkpoint isn't asked again
 
     events: Annotated[list[dict[str, Any]], operator.add]  # streamed to the UI
     llm_calls: Annotated[list[dict[str, Any]], operator.add]

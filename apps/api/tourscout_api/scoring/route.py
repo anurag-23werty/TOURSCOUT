@@ -95,7 +95,9 @@ def plan_route(
     while stops:
         ordered = order_stops(home, stops, return_home)
         legs = _legs(home, ordered)
-        too_long = [i for i, km in enumerate(legs) if km > MAX_LEG_MULTIPLE * max_drive_km]
+        # Leg 0 is the drive from home to the first show: a band can set off a day or two early, so it never
+        # disqualifies a city (Phase 4: an Austin-based band's Midwest tour lost every city to this).
+        too_long = [i for i, km in enumerate(legs) if i > 0 and km > MAX_LEG_MULTIPLE * max_drive_km]
         schedule = _schedule(ordered, legs, start, max_drive_km)
         over_window = end is not None and schedule.stops and date.fromisoformat(schedule.stops[-1].date) > end
         if not too_long and not over_window:

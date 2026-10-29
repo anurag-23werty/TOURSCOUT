@@ -32,3 +32,6 @@ dist/
 
 # Downloaded datasets (GeoNames etc.)
 data/raw/
+
+# TypeScript incremental build info
+*.tsbuildinfo

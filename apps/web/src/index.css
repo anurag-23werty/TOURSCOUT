@@ -1,0 +1,75 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* Riso inks on cool paper. One bold element (the tour poster); everything else stays quiet. */
+@theme {
+  --color-paper: #eef1f6;
+  --color-sheet: #ffffff;
+  --color-ink: #22306e;
+  --color-ink-soft: #4a5488;
+  --color-pink: #e6457a;
+  --color-pink-deep: #c42c61;
+  --color-yellow: #f5c344;
+  --color-mid: #8c94b8;
+  --color-line: #d5dae7;
+
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "tnum" 1;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-pink);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Condensed poster type for the date list and big headings. */
+.poster-type {
+  font-family: var(--font-display);
+  font-variation-settings: "wdth" 75, "opsz" 96;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 0.92;
+}
+
+/* Riso misregistration: the pink plate sits a hair off the blue one. Used once, on the poster headline. */
+.misregister {
+  text-shadow: 2px 2px 0 var(--color-pink);
+}
+
+.leaflet-container {
+  background: #e3e7f0;
+  font-family: var(--font-sans);
+}
+
+.stop-pin {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--color-ink);
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 0 var(--color-pink);
+}
+.stop-pin.is-active {
+  background: var(--color-pink);
+}

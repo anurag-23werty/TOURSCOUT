@@ -35,10 +35,20 @@ async def open_checkpointer(url: str | None = None) -> AsyncIterator[Any]:
         yield InMemorySaver()
     elif kind == "postgres":
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        from psycopg.rows import dict_row
+        from psycopg_pool import AsyncConnectionPool
 
-        async with AsyncPostgresSaver.from_conn_string(url) as saver:
+        # A pool that checks each connection before use, not one long-lived connection: Neon's free tier suspends the
+        # database after ~5 idle minutes and that kills open connections (live bug: every plan failed until a restart).
+        pool = AsyncConnectionPool(url, min_size=1, max_size=4, open=False, check=AsyncConnectionPool.check_connection,
+                                   kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row})
+        await pool.open()
+        try:
+            saver = AsyncPostgresSaver(pool)  # type: ignore[arg-type]
             await saver.setup()  # creates the checkpoint tables on first run
             yield saver
+        finally:
+            await pool.close()
     else:
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 

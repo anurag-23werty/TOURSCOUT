@@ -86,8 +86,9 @@ class PostgresCache:
             if self._pool is None:
                 from psycopg_pool import AsyncConnectionPool  # optional dependency: tourscout-mcp[postgres]
 
+                # check: Neon's free tier suspends after idle minutes and drops connections; reconnect instead of failing.
                 pool = AsyncConnectionPool(self.url, min_size=1, max_size=self.max_size, open=False,
-                                           kwargs={"autocommit": True})
+                                           check=AsyncConnectionPool.check_connection, kwargs={"autocommit": True})
                 await pool.open()
                 async with pool.connection() as conn:
                     await conn.execute(

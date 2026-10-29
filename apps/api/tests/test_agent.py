@@ -367,3 +367,25 @@ async def test_llm_outage_becomes_a_readable_message() -> None:
     a = TourAgent(AgentContext(DownLLM(), FakeTools()))  # type: ignore[arg-type]
     out = [(k, v) async for k, v in a.stream("t16", TourAgent.start_payload(request="I'm Hovvdy, 4 shows", auto_approve=True))]
     assert out[-1] == ("error", LLM_BUSY_MESSAGE) and "429" not in out[-1][1]
+
+
+@pytest.mark.skipif(not __import__("os").getenv("TEST_POSTGRES_URL"), reason="set TEST_POSTGRES_URL to test against Postgres")
+async def test_postgres_checkpointer_survives_dropped_connections(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # Live bug: Neon's free tier suspends after idle minutes and kills open connections; with a single long-lived
+    # connection every plan then failed until a restart. The pool checks connections and reconnects.
+    import os
+    import uuid
+
+    import psycopg
+
+    from tourscout_api.core import checkpoint
+
+    monkeypatch.delenv("CHECKPOINTER", raising=False)
+    url, thread = os.environ["TEST_POSTGRES_URL"], f"drop-{uuid.uuid4().hex[:8]}"
+    async with checkpoint.open_checkpointer(url) as saver:
+        agent = TourAgent(AgentContext(FakeLLM(), FakeTools()), saver)  # type: ignore[arg-type]
+        await agent.start(thread, intake=HOVVDY)
+        with psycopg.connect(url, autocommit=True) as admin:
+            admin.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                          "WHERE datname = current_database() AND pid <> pg_backend_pid()")
+        assert (await agent.state(thread))["interrupt"]["type"] == "confirm_artist"

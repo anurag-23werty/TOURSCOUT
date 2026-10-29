@@ -22,27 +22,16 @@ import anyio
 from .agent.outputs import to_csv, to_ics
 from .agent.runner import TourAgent
 from .baseline import plan_baseline
-from .core.config import REPO_ROOT
+from . import personas
 
-PERSONAS = REPO_ROOT / "evals" / "personas" / "personas.jsonl"
 OUT_DIR = Path.home() / ".cache" / "tourscout" / "plans"
 
 
 def load_persona(persona_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Persona row → (intake, reach_input)."""
-    for line in PERSONAS.read_text(encoding="utf-8").splitlines():
-        p = json.loads(line)
-        if p["id"] == persona_id:
-            window, draw = p.get("window") or [None, None], p.get("draw") or [None, None]
-            intake = {
-                "artist": p["artist"], "sounds_like": p.get("sounds_like", []), "home_base": p["home_base"],
-                "regions": p["regions"], "start_date": window[0], "end_date": window[1], "n_shows": p["n_shows"],
-                "draw_min": draw[0], "draw_max": draw[1], "max_drive_km": p.get("max_drive_km", 600),
-                "past_cities": p.get("past_cities", []),
-            }
-            rows = [{"city": c, "listeners": n} for c, n in (p.get("reach_synthetic") or {}).items()]
-            return intake, {"rows": rows}
-    raise SystemExit(f"persona {persona_id} not found in {PERSONAS}")
+    try:
+        return personas.load(persona_id)
+    except KeyError:
+        raise SystemExit(f"persona {persona_id} not found in {personas.PERSONAS}") from None
 
 
 def ask(checkpoint: dict[str, Any]) -> dict[str, Any]:

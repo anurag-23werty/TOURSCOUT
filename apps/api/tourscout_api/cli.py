@@ -49,12 +49,19 @@ def ask(checkpoint: dict[str, Any]) -> dict[str, Any]:
     """Answer a human checkpoint in the terminal."""
     print(f"\n⏸  {checkpoint['question']}")
     if checkpoint["type"] == "confirm_artist":
-        for i, c in enumerate(checkpoint["candidates"], 1):
+        candidates = checkpoint["candidates"]
+        for i, c in enumerate(candidates, 1):
             print(f"   {i}. {c['name']}  (popularity {c['popularity']}, {', '.join(c['genres'][:3])})")
-        choice = input("   number, or Enter if none of these is you: ").strip()
-        if choice.isdigit() and 1 <= int(choice) <= len(checkpoint["candidates"]):
-            return {"choice": checkpoint["candidates"][int(choice) - 1]["id"]}
-        names = input(f"   similar artists, comma-separated [{', '.join(checkpoint['sounds_like'])}]: ").strip()
+        numbers = "1" if len(candidates) == 1 else f"1–{len(candidates)}"
+        while True:
+            choice = input(f"   {numbers} to pick, or n if none of these is you: ").strip().lower()
+            if choice.isdigit() and 1 <= int(choice) <= len(candidates):
+                return {"choice": candidates[int(choice) - 1]["id"]}
+            if choice in ("n", "none", "no"):
+                break
+            print(f"   please type {numbers}, or n")
+        default = ", ".join(checkpoint["sounds_like"]) or "Enter = let TourScout suggest some"
+        names = input(f"   artists you sound like, comma-separated [{default}]: ").strip()
         return {"choice": None, "sounds_like": [n.strip() for n in names.split(",") if n.strip()] or checkpoint["sounds_like"]}
     for m in checkpoint["metros"]:
         mark = "✓" if m["metro"] in checkpoint["selected"] else " "
@@ -141,7 +148,11 @@ def main() -> None:
     args = parser.parse_args()
     if not args.request and not args.persona:
         parser.error("give a request or --persona")
-    anyio.run(run, args)
+    try:
+        anyio.run(run, args)
+    except (KeyboardInterrupt, EOFError):
+        print("\n  cancelled.")
+        raise SystemExit(130) from None
 
 
 if __name__ == "__main__":

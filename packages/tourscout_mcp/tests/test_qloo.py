@@ -116,3 +116,20 @@ async def test_sqlite_cache_round_trip_and_ttl(tmp_path) -> None:  # type: ignor
     assert await fresh.get("k") == [{"id": 1}]
     expired = SQLiteCache(tmp_path / "c.sqlite", ttl_s=-1)
     assert await expired.get("k") is None
+
+
+@pytest.mark.skipif(not __import__("os").getenv("TEST_POSTGRES_URL"), reason="set TEST_POSTGRES_URL to test against Postgres")
+async def test_postgres_cache_round_trip_and_ttl() -> None:
+    import os
+
+    from tourscout_mcp.cache import PostgresCache
+
+    fresh = PostgresCache(os.environ["TEST_POSTGRES_URL"], ttl_s=60)
+    await fresh.set("pg-k", [{"id": 1}])
+    assert await fresh.get("pg-k") == [{"id": 1}]
+    await fresh.set("pg-k", [{"id": 2}])  # upsert
+    assert await fresh.get("pg-k") == [{"id": 2}]
+    expired = PostgresCache(os.environ["TEST_POSTGRES_URL"], ttl_s=-1)
+    assert await expired.get("pg-k") is None
+    await fresh.aclose()
+    await expired.aclose()

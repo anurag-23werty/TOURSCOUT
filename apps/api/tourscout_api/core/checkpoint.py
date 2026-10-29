@@ -18,7 +18,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 DEFAULT_SQLITE = Path.home() / ".cache" / "tourscout" / "checkpoints.sqlite"
 
 
-def describe(url: str | None) -> str:
+def describe(url: str | None = None) -> str:
+    url = url if url is not None else os.getenv("DATABASE_URL", "")
     if (os.getenv("CHECKPOINTER") or "").lower() == "memory":
         return "memory"
     if url and url.startswith(("postgres://", "postgresql://")):

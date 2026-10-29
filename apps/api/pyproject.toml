@@ -16,7 +16,8 @@ dependencies = [
     "python-multipart>=0.0.32",
     "langgraph-checkpoint-sqlite>=3.1.2",
     "langgraph-checkpoint-postgres>=3.2.0",
-    "psycopg[binary]>=3.3.6",
+    "psycopg[binary,pool]>=3.3.6",
+    "langfuse>=5.0.4",
 ]
 
 [project.scripts]

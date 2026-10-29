@@ -74,23 +74,31 @@ class SQLiteCache:
 
 
 class PostgresCache:
-    def __init__(self, url: str, ttl_s: float) -> None:
-        self.url, self.ttl_s = url, ttl_s
-        self._ready = False
+    """Pooled: a tour fan-out does ~120 cache reads, and a fresh TLS connection to Neon per read would add seconds."""
 
-    async def _conn(self):  # type: ignore[no-untyped-def]
-        import psycopg  # optional dependency: pip install tourscout-mcp[postgres]
+    def __init__(self, url: str, ttl_s: float, max_size: int = 8) -> None:
+        self.url, self.ttl_s, self.max_size = url, ttl_s, max_size
+        self._pool = None
+        self._lock = anyio.Lock()
 
-        conn = await psycopg.AsyncConnection.connect(self.url, autocommit=True)
-        if not self._ready:
-            await conn.execute(
-                "CREATE TABLE IF NOT EXISTS qloo_cache (key TEXT PRIMARY KEY, body JSONB, created TIMESTAMPTZ DEFAULT now())"
-            )
-            self._ready = True
-        return conn
+    async def _get_pool(self):  # type: ignore[no-untyped-def]
+        async with self._lock:
+            if self._pool is None:
+                from psycopg_pool import AsyncConnectionPool  # optional dependency: tourscout-mcp[postgres]
+
+                pool = AsyncConnectionPool(self.url, min_size=1, max_size=self.max_size, open=False,
+                                           kwargs={"autocommit": True})
+                await pool.open()
+                async with pool.connection() as conn:
+                    await conn.execute(
+                        "CREATE TABLE IF NOT EXISTS qloo_cache (key TEXT PRIMARY KEY, body JSONB, created TIMESTAMPTZ DEFAULT now())"
+                    )
+                self._pool = pool
+        return self._pool
 
     async def get(self, key: str) -> Any | None:
-        async with await self._conn() as conn:
+        pool = await self._get_pool()
+        async with pool.connection() as conn:
             cur = await conn.execute(
                 "SELECT body FROM qloo_cache WHERE key = %s AND created > now() - make_interval(secs => %s)",
                 (key, self.ttl_s),
@@ -99,12 +107,17 @@ class PostgresCache:
         return row[0] if row else None
 
     async def set(self, key: str, value: Any) -> None:
-        async with await self._conn() as conn:
+        pool = await self._get_pool()
+        async with pool.connection() as conn:
             await conn.execute(
                 "INSERT INTO qloo_cache (key, body) VALUES (%s, %s::jsonb) "
                 "ON CONFLICT (key) DO UPDATE SET body = EXCLUDED.body, created = now()",
                 (key, json.dumps(value)),
             )
+
+    async def aclose(self) -> None:
+        if self._pool is not None:
+            await self._pool.close()
 
 
 def make_cache(url: str, ttl_days: int) -> Cache:

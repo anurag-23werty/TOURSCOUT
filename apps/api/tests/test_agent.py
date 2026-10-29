@@ -276,3 +276,92 @@ async def test_every_city_gets_category_sponsors_once() -> None:
     out = await a.start("t14", intake=HOVVDY, auto_approve=True)
     for city in out["state"]["intel"].values():
         assert [b["id"] for b in city["sponsors"]] == ["B1", "BEER1"]
+
+
+class FakeObservation:
+    def __init__(self, log: list, name: str) -> None:
+        self.log, self.name = log, name
+
+    def start_observation(self, **kw):  # type: ignore[no-untyped-def]
+        self.log.append(("child", kw["name"], kw["as_type"], kw.get("level")))
+        return FakeObservation(self.log, kw["name"])
+
+    def update(self, **kw):  # type: ignore[no-untyped-def]
+        self.log.append(("update", self.name, kw["output"]["outcome"]))
+
+    def end(self):  # type: ignore[no-untyped-def]
+        self.log.append(("end", self.name))
+
+
+class FakeLangfuse:
+    def __init__(self) -> None:
+        self.log: list = []
+
+    def start_observation(self, **kw):  # type: ignore[no-untyped-def]
+        self.log.append(("root", kw["name"]))
+        return FakeObservation(self.log, kw["name"])
+
+    def flush(self) -> None:
+        self.log.append(("flush",))
+
+
+async def test_tracing_records_steps_llm_calls_and_outcome() -> None:
+    from tourscout_api.core.tracing import Tracer
+
+    fake = FakeLangfuse()
+    llm, tools = FakeLLM(), FakeTools()
+    llm.calls.append(__import__("tourscout_api.core.llm", fromlist=["CallRecord"]).CallRecord("old", "x", "x", None, 0, True))
+    a = TourAgent(AgentContext(llm, tools), tracer=Tracer(fake))  # type: ignore[arg-type]
+    [_ async for _ in a.stream("t15", TourAgent.start_payload(request="I'm Hovvdy, 4 shows", auto_approve=True))]
+    assert fake.log[0] == ("root", "tour-plan:start")
+    steps = [e[1] for e in fake.log if e[0] == "child" and e[2] == "span"]
+    assert steps[:3] == ["intake", "resolve", "confirm_artist"] and "outputs" in steps
+    assert ("update", "tour-plan:start", "plan") in fake.log and fake.log[-1] == ("flush",)
+
+
+async def test_tracing_off_without_keys(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from tourscout_api.core.tracing import Tracer
+
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    assert Tracer.from_env().enabled is False
+
+
+@pytest.mark.skipif(not __import__("os").getenv("TEST_POSTGRES_URL"), reason="set TEST_POSTGRES_URL to test against Postgres")
+async def test_postgres_checkpointer_survives_a_new_agent() -> None:
+    import os
+    import uuid
+
+    from tourscout_api.core import checkpoint
+
+    url, thread = os.environ["TEST_POSTGRES_URL"], f"pg-{uuid.uuid4().hex[:8]}"
+    assert checkpoint.describe(url) == "postgres"
+    async with checkpoint.open_checkpointer(url) as saver:
+        await TourAgent(AgentContext(FakeLLM(), FakeTools()), saver).start(thread, intake=HOVVDY)  # type: ignore[arg-type]
+    async with checkpoint.open_checkpointer(url) as saver:  # new connection = a restarted server
+        agent2 = TourAgent(AgentContext(FakeLLM(), FakeTools()), saver)  # type: ignore[arg-type]
+        assert (await agent2.state(thread))["interrupt"]["type"] == "confirm_artist"
+        await agent2.resume(thread, {"choice": "HV"})
+        done = await agent2.resume(thread, {"accept": True})
+        assert done["done"] and done["state"]["plan"]["stops"]
+
+
+def test_describe_reads_database_url_from_env(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from tourscout_api.core import checkpoint
+
+    monkeypatch.delenv("CHECKPOINTER", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@db/x")
+    assert checkpoint.describe() == "postgres"  # /health used to say "sqlite" here
+    monkeypatch.setenv("DATABASE_URL", "")
+    assert checkpoint.describe() == "sqlite"
+
+
+async def test_llm_outage_becomes_a_readable_message() -> None:
+    from tourscout_api.agent.runner import LLM_BUSY_MESSAGE
+
+    class DownLLM(FakeLLM):
+        async def json(self, schema, prompt, **kw):  # type: ignore[no-untyped-def,override]
+            raise LLMUnavailable("groq/openai/gpt-oss-120b: HTTP 429, retry after 12s")
+
+    a = TourAgent(AgentContext(DownLLM(), FakeTools()))  # type: ignore[arg-type]
+    out = [(k, v) async for k, v in a.stream("t16", TourAgent.start_payload(request="I'm Hovvdy, 4 shows", auto_approve=True))]
+    assert out[-1] == ("error", LLM_BUSY_MESSAGE) and "429" not in out[-1][1]

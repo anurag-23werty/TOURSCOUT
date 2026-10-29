@@ -140,8 +140,13 @@ def create_app(agent: TourAgent | None = None, settings: ApiSettings | None = No
             try:
                 running.acquire_nowait()
             except anyio.WouldBlock:
-                yield sse("error", {"message": "TourScout is busy planning other tours; try again in a minute"})
-                return
+                # Queue instead of turning people away (Phase 7 drill: 7 of 10 simultaneous visitors were rejected).
+                yield sse("step", {"node": "queue", "message": "Other tours are being planned; you're in line"})
+                with anyio.move_on_after(settings.queue_timeout_s) as wait:
+                    await running.acquire()
+                if wait.cancelled_caught:
+                    yield sse("error", {"message": "TourScout is very busy right now; please try again in a few minutes"})
+                    return
             try:
                 async for kind, value in agent_.stream(thread_id, payload):
                     yield sse(kind, value if kind != "error" else {"message": value})

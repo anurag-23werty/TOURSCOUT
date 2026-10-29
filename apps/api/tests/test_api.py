@@ -101,3 +101,13 @@ def test_rate_limit_returns_429_with_retry_after(client) -> None:  # type: ignor
         assert client.post("/api/plans", json={"message": HOVVDY_TEXT}).status_code == 200
     r = client.post("/api/plans", json={"message": HOVVDY_TEXT})
     assert r.status_code == 429 and int(r.headers["retry-after"]) > 0
+
+
+def test_busy_server_queues_then_gives_a_clear_message() -> None:
+    agent = TourAgent(AgentContext(FakeLLM(), FakeTools()))  # type: ignore[arg-type]
+    settings = ApiSettings(concurrent_plans=0, queue_timeout_s=0.05)  # no free slot ever: the queue times out
+    with TestClient(create_app(agent, settings, mount_mcp=False)) as c:
+        c.headers["X-Session-Id"] = c.post("/api/sessions").json()["session_id"]
+        ev = events(c.post("/api/plans", json={"message": HOVVDY_TEXT}))
+    assert [k for k, _ in ev] == ["thread", "step", "error"]
+    assert ev[1][1]["node"] == "queue" and "very busy" in ev[2][1]["message"]

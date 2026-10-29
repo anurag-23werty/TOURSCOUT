@@ -3,6 +3,7 @@
 import type { Badge, Label } from "./types";
 
 const STEP_TEXT: Record<string, string> = {
+  queue: "Waiting for a free slot",
   intake: "Read your request",
   resolve: "Looked you up on Qloo",
   confirm_artist: "Chose whose fans to map",

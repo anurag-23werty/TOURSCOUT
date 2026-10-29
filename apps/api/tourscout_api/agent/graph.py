@@ -120,8 +120,9 @@ def build_graph(ctx: AgentContext, checkpointer: Any = None):  # type: ignore[no
         if state.get("intake"):
             parsed = Intake.model_validate(state["intake"])
         else:
+            # No fallback exists for this step, so it waits longer than most (Phase 7 drill: Groq 429s under load).
             parsed = await llm.json(Intake, prompt("intake", today=date.today().isoformat(), request=state["request"]),
-                                    system=prompt("system"), tier="lite", purpose="intake")
+                                    system=prompt("system"), tier="lite", purpose="intake", patience_s=30)
         if not parsed.start_date:
             parsed.start_date = (date.today() + timedelta(days=DEFAULT_LEAD_DAYS)).isoformat()
         return merge({"intake": parsed.model_dump(), "attempts": 0, "violations": []},
@@ -161,7 +162,7 @@ def build_graph(ctx: AgentContext, checkpointer: Any = None):  # type: ignore[no
         if not names:
             similar = await llm.json(SimilarArtists, prompt(
                 "similar_artists", artist=state["intake"]["artist"], context=state.get("request") or "independent artist"),
-                system=prompt("system"), tier="lite", purpose="similar_artists")
+                system=prompt("system"), tier="lite", purpose="similar_artists", patience_s=30)
             names = similar.artists
         signals = []
         for name in names[:4]:

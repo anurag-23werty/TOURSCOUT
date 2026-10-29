@@ -22,6 +22,7 @@ class ApiSettings:
     llm_actions_per_ip_per_hour: int = field(default_factory=lambda: _int("LIMIT_LLM_ACTIONS_PER_IP_HOUR", 30))
     uploads_per_ip_per_hour: int = field(default_factory=lambda: _int("LIMIT_UPLOADS_PER_IP_HOUR", 10))
     concurrent_plans: int = field(default_factory=lambda: _int("LIMIT_CONCURRENT_PLANS", 3))
+    queue_timeout_s: float = field(default_factory=lambda: float(os.getenv("QUEUE_TIMEOUT_S") or 150))
     session_ttl_s: int = field(default_factory=lambda: _int("SESSION_TTL_S", 6 * 3600))
     upload_max_bytes: int = field(default_factory=lambda: _int("UPLOAD_MAX_BYTES", 2 * 1024 * 1024))
     upload_ttl_s: int = 15 * 60

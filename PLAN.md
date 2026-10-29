@@ -193,11 +193,16 @@ recall 42% vs 34% for population.
 - [x] Fixes from the drills: a queue instead of "busy" rejections; readable "free-tier limit" message instead of provider
       errors; a patient intake step; per-IP plan limit 6 → 20 (campus networks share an IP); `/health` checkpointer label.
 - [x] Finding: Groq free tier = 200k tokens/day (~25–30 plans); documented in `docs/models.md`.
-- [ ] **You:** create the Neon, Langfuse, Render, Vercel and UptimeRobot accounts and deploy (`docs/deploy.md`).
-- [ ] Prewarm + drills against the live URL; incognito, phone and other-network checks (`docs/deploy.md` step 7).
+- [x] Deployed: web https://tourscout-lovat.vercel.app, API https://tourscout-api.onrender.com (Neon Postgres,
+      Langfuse US, UptimeRobot every 5 min). Repo public with MIT, website and topics in the About box; CI green.
+- [x] Live: prewarm of us-02 / nq-02 / us-01; **11/11 failure drills passed** against the live API.
+- [x] Fixes from going live: `WEB_ORIGINS` ignores trailing slashes (a pasted `…vercel.app/` blocked the site);
+      **SSE heartbeat** every 15 s, because a cold-cache fan-out was silent for ~1 min and the connection got cut
+      (`ReadError` in the live prewarm); CI no longer forces `CHECKPOINTER=memory` over the checkpointer tests.
+- [ ] **You:** incognito, phone on mobile data, one plan with "Let me confirm" on.
 
-**Exit:** the live URL survives 10 rapid sessions and every failure drill degrades gracefully. Locally ✅ (container +
-Postgres); live: after you deploy.
+**Exit:** every failure drill degrades gracefully on the live URL ✅. The 10-visitor burst passed locally (10/10) and is
+not rerun live, to save the free LLM quota.
 
 | Step | `git add` | Commit message |
 |---|---|---|
@@ -206,6 +211,8 @@ Postgres); live: after you deploy.
 | 7.3 Docker + deploy config | `git add infra/api.Dockerfile .dockerignore render.yaml apps/web/vercel.json` | `chore(infra): two-stage Docker image, Render blueprint and Vercel config` |
 | 7.4 CI | `git add .github/workflows/ci.yml` | `ci: Python, Postgres, eval, web and Docker checks` |
 | 7.5 Drills + docs | `git add scripts/live_check.py docs/deploy.md docs/models.md ARCHITECTURE.md .env.example PLAN.md` | `docs(deploy): free-tier deploy guide, failure drills and Groq daily-limit finding` |
+| 7.6 Live fixes | (pushed: CI override, `LANGFUSE_HOST`, `WEB_ORIGINS` slashes, SSE heartbeat) | |
+| 7.7 Status | `git add PLAN.md` | `docs(plan): Phase 7 done, live URLs and drill results` |
 
 ---
 

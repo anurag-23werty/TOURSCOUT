@@ -241,6 +241,7 @@ async def test_stream_turns_user_errors_into_an_error_event() -> None:
 async def test_sqlite_checkpointer_survives_a_new_agent(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     from tourscout_api.core import checkpoint
 
+    monkeypatch.delenv("CHECKPOINTER", raising=False)  # CHECKPOINTER=memory would override the store under test
     monkeypatch.setattr(checkpoint, "DEFAULT_SQLITE", tmp_path / "cp.sqlite")
     async with checkpoint.open_checkpointer("") as saver:
         llm, tools = FakeLLM(), FakeTools()
@@ -327,12 +328,13 @@ async def test_tracing_off_without_keys(monkeypatch) -> None:  # type: ignore[no
 
 
 @pytest.mark.skipif(not __import__("os").getenv("TEST_POSTGRES_URL"), reason="set TEST_POSTGRES_URL to test against Postgres")
-async def test_postgres_checkpointer_survives_a_new_agent() -> None:
+async def test_postgres_checkpointer_survives_a_new_agent(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     import os
     import uuid
 
     from tourscout_api.core import checkpoint
 
+    monkeypatch.delenv("CHECKPOINTER", raising=False)
     url, thread = os.environ["TEST_POSTGRES_URL"], f"pg-{uuid.uuid4().hex[:8]}"
     assert checkpoint.describe(url) == "postgres"
     async with checkpoint.open_checkpointer(url) as saver:

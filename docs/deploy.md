@@ -66,6 +66,29 @@ of the free LLM quota. Then by hand: open the site in an incognito window, on yo
 Repo page → ⚙️ next to **About** → **Website**: the Vercel URL; description: "Tour-planning agent for independent
 musicians, grounded in Qloo taste data"; topics `qloo ai-agent langgraph mcp music touring`. Check **MIT License** shows.
 
+## Accounts (sign-in), optional
+Guests keep working without this. With it, people can sign in with Google or email and keep **My tours** on every device.
+
+1. **Neon** → project → **Auth** → enable. Sign-in methods: **Email & password** and **Google**.
+   **Configuration → Domains:** add `https://<project>.vercel.app` (and `http://localhost:5173` for local dev).
+   Copy the **Auth URL** (`https://ep-….neonauth.….aws.neon.tech/neondb/auth`). It's public, not a secret.
+2. **Render** → `tourscout-api` → Environment: `NEON_AUTH_URL` = the Auth URL → Save, rebuild, and deploy.
+   `/health` stays the same; the log says `sign-in: Neon Auth`.
+3. **Vercel** → project → Settings → Environment Variables: `VITE_NEON_AUTH_URL` = the same Auth URL →
+   **Deployments → ⋯ → Redeploy** (Vite bakes it in at build time).
+4. Optional, so **Delete account** also removes the login (managed Neon Auth has no self-service delete):
+   Neon → Account settings → **API keys** → create one; add `NEON_API_KEY`, `NEON_PROJECT_ID` (Settings → General)
+   and `NEON_BRANCH_ID` (Branches → production → ID, `br-…`) on Render. Without them, deleting an account removes
+   the tours and asks you to remove the login in Neon → Auth → Users.
+
+**Before real users:** in Neon → Auth, use your own Google OAuth client (Google Cloud → Credentials → OAuth client,
+redirect URI `<Auth URL>/callback/google`), set a custom SMTP sender (e.g. Resend) and turn on email verification, set
+the app name, and turn off **Allow localhost**. See Neon's production checklist.
+
+How it works: the browser signs in with Neon Auth directly (session cookie `SameSite=None; Partitioned`); the API only
+sees a 15-minute EdDSA JWT (`Authorization: Bearer`), checked against `<Auth URL>/.well-known/jwks.json`. Who owns which
+tour is in the `plans` table next to the checkpoints; tours planned as a guest move into the account at sign-in.
+
 ## Use the hosted MCP server
 Besides the website, the API serves TourScout's Qloo tools (demand map, venues, openers, sponsors, promo spots…) as an
 **MCP server**, so any MCP client can call them directly:
@@ -92,4 +115,8 @@ Only `RENDER_EXTERNAL_HOSTNAME` (set by Render) and `MCP_ALLOWED_HOSTS` are acce
 | First request after a while takes ~50 s | Render free tier was asleep: check the UptimeRobot monitor is running |
 | "AI models … at their free-tier limit" | Gemini overloaded and/or Groq's 200k tokens/day used up (evals and drills burn it fast). Wait, or run fewer plans; never run evals on demo day |
 | MCP client gets `421 Misdirected Request` | the hostname isn't allowed: add it to `MCP_ALLOWED_HOSTS` on Render |
+| "Sign in" button missing on the site | `VITE_NEON_AUTH_URL` not set on Vercel, or set but not redeployed |
+| Signed in, but the API says "sign-in isn't enabled" | `NEON_AUTH_URL` not set on Render |
+| Google sign-in returns an "untrusted origin" / redirect error | the site URL isn't in Neon → Auth → Configuration → Domains |
+| Local API hangs at "Waiting for application startup" | `DATABASE_URL` points at Neon and your network blocks port 5432: run with `DATABASE_URL= TOURSCOUT_CACHE_URL=` (SQLite) |
 | Build fails downloading GeoNames | geonames.org was briefly down: **Manual Deploy → Clear build cache & deploy** |

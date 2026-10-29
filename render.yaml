@@ -22,6 +22,12 @@ services:
         sync: false
       - key: NEON_AUTH_URL         # Neon console → Auth → Auth URL; empty = guests only
         sync: false
+      - key: NEON_API_KEY          # optional: lets "Delete account" remove the Neon Auth login too
+        sync: false
+      - key: NEON_PROJECT_ID
+        sync: false
+      - key: NEON_BRANCH_ID
+        sync: false
       - key: WEB_ORIGINS           # the Vercel URL, e.g. https://tourscout.vercel.app
         sync: false
       - key: LANGFUSE_PUBLIC_KEY

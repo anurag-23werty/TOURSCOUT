@@ -252,13 +252,18 @@ equal option (no wall in front of the planner).
 - **My tours** page: list, reopen, rename, delete (delete removes the checkpoint too).
 
 **Steps**
-- [ ] Neon: enable Auth on the branch; enable Google (own OAuth client from Google Cloud) and email/password; set the
-      Vercel URL as a trusted origin; custom SMTP (Resend free tier) for verification and reset emails.
-- [ ] API: `auth.py` (JWKS verify + Owner), `plans` store (Postgres, SQLite locally), claim endpoint, `GET /api/me/plans`,
-      rename/delete, per-user limits. Tests with a locally generated Ed25519 key (no network).
-- [ ] Web: auth client, sign-in/up page, account menu, guest choice, token refresh, My tours page.
-- [ ] Account deletion (removes user's plans) and a short privacy page (what we store: email, name, plans).
-- [ ] Drills: expired token, forged token, another user's plan, guest→user claim, sign-out.
+- [x] Neon: Auth enabled (email/password + Google on Neon's shared credentials), Vercel + localhost trusted.
+- [ ] Neon, before real users: own Google OAuth client, custom SMTP (Resend) + email verification, app name, localhost off.
+- [x] API: `auth.py` (JWKS verify, EdDSA only), `plans` store (Postgres / SQLite / memory), claim, `GET /api/me/plans`,
+      rename/delete (checkpoints too), per-user limits, `DELETE /api/me` (tours + Neon login via the Neon API).
+      Verified with a **real** Neon token (iss/aud = Auth URL origin, 15-min expiry); 21 account tests.
+- [x] Web: `@neondatabase/auth` client, sign-in/up page (Google + email), "Continue as a guest", account menu,
+      token cache + refresh, My tours (open, rename, delete), CSV/ICS downloads with the user's token.
+- [x] End-to-end over HTTP against Neon + local API: guest plan → sign in → claim → My tours → rename → reopen → CSV →
+      delete → sign out (13/13).
+- [ ] You: click through the UI (Chrome + **Safari**: partitioned cookies, Google redirect), then deploy (`docs/deploy.md`
+      → Accounts).
+- [ ] Privacy page (what we store: email, name, tours) and password reset (needs custom SMTP).
 
 | Step | `git add` | Commit message |
 |---|---|---|

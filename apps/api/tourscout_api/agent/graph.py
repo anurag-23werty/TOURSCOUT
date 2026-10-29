@@ -12,6 +12,7 @@ which order, every number) is tools + code. State is checkpointed, so a refine c
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -242,7 +243,11 @@ def build_graph(ctx: AgentContext, checkpointer: Any = None):  # type: ignore[no
         by_label = {m["metro"]: m for m in state["metros"]}
         stops = [Stop(c, by_label[c]["lat"], by_label[c]["lon"], priority=by_label[c]["demand"] + max(by_label[c]["gap"], 0))
                  for c in state["selected"] if c in by_label]
-        home_metro = tools.metro(intake_["home_base"])
+        # Prefer the home city in the tour's own country: "Kochi" alone is Kōchi, Japan in GeoNames, which started an
+        # India tour with a flight from Japan (8,755 km for 6 South Indian shows).
+        countries = Counter(m.country for m in (tools.metro(s.metro) for s in stops) if m)
+        tour_country = countries.most_common(1)[0][0] if countries else None
+        home_metro = (tools.metro(intake_["home_base"], tour_country) if tour_country else None) or tools.metro(intake_["home_base"])
         home = (home_metro.lat, home_metro.lon) if home_metro else (stops[0].lat, stops[0].lon)
         flying = intake_.get("max_drive_km", 600) == 0
         planned = plan_route(

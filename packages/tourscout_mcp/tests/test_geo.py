@@ -100,3 +100,15 @@ def test_big_city_keeps_its_edge_cells() -> None:
                         City("Lawrence", "US", "KS", 38.97, -95.24, 95_000), City("Kansas City", "US", "MO", 39.10, -94.58, 2_000_000)])
     assert index.nearest(12.568, 77.52).name == "Bengaluru"  # real Qloo cell centre: 35 km from the town, 45 km from the city
     assert index.nearest(38.97, -95.25).name == "Lawrence"  # college town 58 km from a big city keeps its own cells
+
+
+def test_same_name_in_two_countries_and_display_names() -> None:
+    # Live bug: "Kochi" (home of When Chai Met Toast) resolved to Kōchi, Japan, and the metro was labelled "Kanayannur".
+    index = MetroIndex([
+        City("Kanayannur", "IN", "13", 9.97, 76.27, 851_406),
+        City("Kochi", "IN", "13", 9.94, 76.26, 633_553, ("Cochin",)),
+        City("Kochi", "JP", "39", 33.56, 133.53, 332_059),
+    ])
+    assert index.find("Kochi", "IN").label == "Kochi, IN"
+    assert index.find("Kochi", "JP").label == "Kochi, JP"
+    assert index.find("Cochin").label == "Kochi, IN" and index.find("Kanayannur").label == "Kochi, IN"

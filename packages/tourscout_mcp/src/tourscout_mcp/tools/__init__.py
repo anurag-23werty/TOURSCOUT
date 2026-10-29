@@ -17,6 +17,10 @@ from ..qloo import QlooClient
 T = TypeVar("T")
 
 
+def wkt_point(metro: Metro) -> str:
+    return f"POINT({metro.lon} {metro.lat})"  # WKT is longitude first
+
+
 @dataclass
 class Deps:
     qloo: QlooClient
@@ -37,8 +41,24 @@ class Deps:
             deps.notes.append(str(exc))
         return deps
 
-    def metro(self, city: str) -> Metro | None:
-        return self.metros.find(city) if self.metros else None
+    def metro(self, city: str, country: str | None = None) -> Metro | None:
+        return self.metros.find(city, country) if self.metros else None
+
+    def place_filter(self, city: str) -> dict[str, Any]:
+        """Where to look for venues and promo spots: the metro's point + radius, else the name.
+
+        Qloo resolves a name itself and gets small cities wrong (live: "Angamāli, IN" returned venues in Germany,
+        "Teni, IN" a farm in Brazil); a point returns that city's places, or honestly none.
+        """
+        metro = self.metro(city)
+        if metro is None:
+            return {"filter.location.query": city}
+        return {"filter.location": wkt_point(metro), "filter.location.radius": int(max(metro.radius_km, 15) * 1000)}
+
+    def location_signal(self, city: str) -> dict[str, Any]:
+        """Bias artists or brands toward a city: its point, else the name (which returns nothing for small cities)."""
+        metro = self.metro(city)
+        return {"signal.location": wkt_point(metro)} if metro else {"signal.location.query": city}
 
     def metro_names(self, city: str) -> set[str]:
         metro = self.metro(city)

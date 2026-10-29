@@ -18,15 +18,18 @@ INSIGHTS: dict[str, set[str]] = {
     "urn:entity:artist": {
         "signal.interests.entities",
         "signal.interests.tags",
+        "signal.location",  # WKT point of the metro (preferred: a name is resolved by Qloo and misses small cities)
         "signal.location.query",
         "signal.location.weight",
         "filter.popularity.max",
         "filter.popularity.min",
         "filter.exclude.entities",
     },
-    "urn:entity:place": {"signal.interests.entities", "filter.location.query", "filter.tags"},
+    "urn:entity:place": {"signal.interests.entities", "filter.location", "filter.location.radius", "filter.location.query",
+                         "filter.tags"},
     "urn:entity:brand": {
         "signal.interests.entities",
+        "signal.location",
         "signal.location.query",
         "filter.tags",  # verified in Phase 6: urn:tag:genre:brand:… narrows to a category (beer, headphones…)
         "signal.demographics.age",

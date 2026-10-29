@@ -120,6 +120,11 @@ class _Grid:
                 yield from self.buckets.get((base_lat + i, (base_lon + j + 180) % 360 - 180), ())
 
 
+# GeoNames sometimes lists an administrative area as the biggest "city" of a metro, so the metro would be shown under a
+# name nobody uses. The names musicians and venues use instead:
+DISPLAY_NAMES = {("Kanayannur", "IN"): "Kochi"}
+
+
 class MetroIndex:
     def __init__(self, cities: Iterable[City]) -> None:
         self.metros: list[Metro] = []
@@ -129,7 +134,7 @@ class MetroIndex:
             host = self._host(city.lat, city.lon)
             if host is None:
                 host = Metro(
-                    city.name, city.country, city.admin1, city.lat, city.lon,
+                    DISPLAY_NAMES.get((city.name, city.country), city.name), city.country, city.admin1, city.lat, city.lon,
                     0, metro_radius_km(city.population),
                 )
                 self.metros.append(host)

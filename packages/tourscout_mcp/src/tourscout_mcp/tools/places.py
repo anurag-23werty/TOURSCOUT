@@ -21,7 +21,7 @@ PROMO_TAGS = {
 def _places(deps: Deps, artist_ids: list[str], city: str, tag: str, take: int):  # type: ignore[no-untyped-def]
     return lambda: deps.qloo.insights(
         PLACE,
-        **{"signal.interests.entities": artist_ids, "filter.location.query": city, "filter.tags": tag, "take": take},
+        **{"signal.interests.entities": artist_ids, **deps.place_filter(city), "filter.tags": tag, "take": take},
     )
 
 
@@ -80,7 +80,7 @@ async def find_sponsors(deps: Deps, artist_ids: list[str], cities: list[str] | N
     def fetch(city: str | None):  # type: ignore[no-untyped-def]
         params: dict[str, Any] = {"signal.interests.entities": artist_ids, "take": take}
         if city:
-            params["signal.location.query"] = city
+            params.update(deps.location_signal(city))
         return lambda: deps.qloo.insights(BRAND, **params)
 
     def fetch_category(name: str):  # type: ignore[no-untyped-def]

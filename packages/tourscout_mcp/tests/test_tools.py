@@ -13,14 +13,21 @@ pytestmark = pytest.mark.anyio
 HEAD = artist("H", "Headliner", 0.80, 1.0, ["Indie Pop", "Dream Pop", "Indie"])
 
 
+POINTS = {"POINT(-87.63 41.88)": "Chicago"}  # metros in the deps fixture are sent to Qloo as WKT points
+SEEN: list[dict[str, str]] = []
+
+
 def qloo_router(request: httpx.Request) -> httpx.Response:
     """A fake Qloo that answers based on the request params (all data synthetic)."""
     p = request.url.params
+    SEEN.append(dict(p))
     if request.url.path == "/search":
         return httpx.Response(200, json={"results": [artist("K", "Kayano Ai", 0.7, 0.0)]})
     if request.url.path == "/entities":
         return httpx.Response(200, json={"results": [HEAD]})
-    kind, city = p.get("filter.type"), p.get("signal.location.query") or p.get("filter.location.query")
+    kind = p.get("filter.type")
+    point = p.get("signal.location") or p.get("filter.location")
+    city = POINTS.get(point) if point else p.get("signal.location.query") or p.get("filter.location.query")
     if kind == "urn:entity:artist":
         assert p["filter.popularity.max"] == "0.75" and p["signal.location.weight"] == "25"
         national = artist("N", "Famous Producer", 0.74, 0.990, ["Pop"])
@@ -148,3 +155,19 @@ async def test_server_exposes_seven_read_only_tools() -> None:
         "resolve_artist", "search_tags", "demand_map", "find_venues", "find_openers", "find_sponsors", "find_promo_spots",
     }
     assert all(t.annotations and t.annotations.read_only_hint for t in tools)
+
+
+async def test_known_cities_are_sent_as_points_not_names(deps: Deps) -> None:
+    # Live bug: Qloo resolved "Angamāli, IN" to Germany and "Teni, IN" to Brazil, and a name signal for a small city
+    # returned no artists or brands at all. Known metros now go as a point (+ radius for places).
+    SEEN.clear()
+    await places.find_venues(deps, ["H"], "Chicago")
+    await places.find_sponsors(deps, ["H"], ["Chicago"], categories=[])
+    venue_calls = [c for c in SEEN if c.get("filter.type") == "urn:entity:place"]
+    assert venue_calls and all(c["filter.location"] == "POINT(-87.63 41.88)" and "filter.location.query" not in c
+                               and int(c["filter.location.radius"]) >= 15_000 for c in venue_calls)
+    assert any(c.get("signal.location") == "POINT(-87.63 41.88)" for c in SEEN if c.get("filter.type") == "urn:entity:brand")
+
+    SEEN.clear()
+    await places.find_venues(deps, ["H"], "Columbus")  # not in the metro index → falls back to the name
+    assert all(c.get("filter.location.query") == "Columbus" for c in SEEN if c.get("filter.type") == "urn:entity:place")

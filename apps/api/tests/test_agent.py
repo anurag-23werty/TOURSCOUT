@@ -36,8 +36,8 @@ class FakeTools:
         self.calls: list[str] = []
         self.no_venues: set[str] = set()
 
-    def metro(self, city: str):  # type: ignore[no-untyped-def]
-        return INDEX.find(city)
+    def metro(self, city: str, country: str | None = None):  # type: ignore[no-untyped-def]
+        return INDEX.find(city, country)
 
     async def resolve_artist(self, name: str) -> dict[str, Any]:
         cands = ARTISTS.get(name, [])
@@ -389,3 +389,21 @@ async def test_postgres_checkpointer_survives_dropped_connections(monkeypatch) -
             admin.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
                           "WHERE datname = current_database() AND pid <> pg_backend_pid()")
         assert (await agent.state(thread))["interrupt"]["type"] == "confirm_artist"
+
+
+async def test_home_city_is_looked_up_in_the_tours_country() -> None:
+    # "Kochi" alone is Kōchi, Japan in GeoNames; an India tour must start from Kochi, India, not with a flight from Japan.
+    from types import SimpleNamespace
+
+    class Tools(FakeTools):
+        def metro(self, city: str, country: str | None = None):  # type: ignore[no-untyped-def]
+            if city != "Twin Town":
+                return super().metro(city, country)
+            if country == "US":
+                return super().metro("Chicago")
+            return SimpleNamespace(lat=35.7, lon=139.7, country="JP", label="Twin Town, JP")  # the namesake abroad
+
+    agent = TourAgent(AgentContext(FakeLLM(), Tools()))  # type: ignore[arg-type]
+    done = await agent.start("t-home", intake={**HOVVDY, "home_base": "Twin Town"}, auto_approve=True)
+    route = done["state"]["route"]
+    assert route["total_km"] < 4000, route["total_km"]

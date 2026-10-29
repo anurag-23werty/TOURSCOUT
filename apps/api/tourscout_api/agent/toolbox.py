@@ -39,8 +39,8 @@ class Toolbox:
     async def find_promo_spots(self, artist_ids: list[str], city: str, take: int = 3) -> dict[str, Any]:
         return await places.find_promo_spots(self.deps, artist_ids, city, ["record_store", "coffee_shop"], take)
 
-    def metro(self, city: str) -> Metro | None:
-        return self.deps.metro(city)
+    def metro(self, city: str, country: str | None = None) -> Metro | None:
+        return self.deps.metro(city, country)
 
     async def aclose(self) -> None:
         await self.deps.qloo.aclose()

@@ -65,7 +65,7 @@ async def find_openers(
             ARTIST,
             **{
                 "signal.interests.entities": headliner_id,
-                "signal.location.query": city,
+                **deps.location_signal(city),
                 "signal.location.weight": OPENER_LOCATION_WEIGHT,
                 "filter.popularity.max": cap,
                 "filter.exclude.entities": headliner_id,

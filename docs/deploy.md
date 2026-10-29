@@ -32,7 +32,8 @@ Do the steps in order: each one gives you a value the next one needs. Sign in to
 | `DATABASE_URL` | the Neon string |
 | `TOURSCOUT_CACHE_URL` | the same Neon string |
 | `WEB_ORIGINS` | leave `http://localhost:5173` for now; you'll add the Vercel URL in step 5 |
-| `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | from step 2 (plus `LANGFUSE_HOST` if US region) |
+| `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | from step 2 |
+| `LANGFUSE_HOST` | `https://us.cloud.langfuse.com` (US project) or `https://cloud.langfuse.com` (EU) |
 
 4. **Apply**. When the deploy is live, open `https://<your-service>.onrender.com/health`: you should see
    `"ok": true`, every check `true`, and `"checkpointer": "postgres"`.

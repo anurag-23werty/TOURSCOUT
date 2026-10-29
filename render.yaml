@@ -26,6 +26,8 @@ services:
         sync: false
       - key: LANGFUSE_SECRET_KEY
         sync: false
+      - key: LANGFUSE_HOST         # https://us.cloud.langfuse.com for a US project, https://cloud.langfuse.com for EU
+        sync: false
       - key: GEMINI_MAIN_MODEL
         value: gemini-flash-lite-latest
       - key: GEMINI_LITE_MODEL

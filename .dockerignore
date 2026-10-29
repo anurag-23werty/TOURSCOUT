@@ -1,0 +1,23 @@
+# Never send secrets or Qloo data into a build context
+.env
+.env.*
+!.env.example
+qloo_responses/
+evals/reports/raw/
+**/*.sqlite
+**/*.db
+
+# Rebuilt inside the image
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+data/raw/
+**/node_modules/
+**/dist/
+
+# Not needed by the API image
+.git/
+apps/web/
+scripts/
+docs/
+# (no *.md rule: the agent's prompt templates are .md files)

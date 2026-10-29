@@ -1,0 +1,36 @@
+# Render Blueprint: Dashboard → New → Blueprint → pick this repo. Secrets marked sync:false are entered in the dashboard.
+services:
+  - type: web
+    name: tourscout-api
+    runtime: docker
+    dockerfilePath: ./infra/api.Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: QLOO_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DATABASE_URL          # Neon connection string: agent checkpoints
+        sync: false
+      - key: TOURSCOUT_CACHE_URL   # the same Neon string: private Qloo cache that survives restarts
+        sync: false
+      - key: WEB_ORIGINS           # the Vercel URL, e.g. https://tourscout.vercel.app
+        sync: false
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
+      - key: GEMINI_MAIN_MODEL
+        value: gemini-flash-lite-latest
+      - key: GEMINI_LITE_MODEL
+        value: gemini-flash-lite-latest
+      - key: LIMIT_PLANS_PER_IP_HOUR   # judges on one campus network share an IP; the daily cap still protects quotas
+        value: "20"
+      - key: MUSICBRAINZ_USER_AGENT
+        value: TourScout/0.1 (https://github.com/anurag-23werty/TOURSCOUT)

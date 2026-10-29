@@ -67,8 +67,22 @@ Repo page → ⚙️ next to **About** → **Website**: the Vercel URL; descript
 musicians, grounded in Qloo taste data"; topics `qloo ai-agent langgraph mcp music touring`. Check **MIT License** shows.
 
 ## Use the hosted MCP server
-Any MCP client can connect to `https://<your-service>.onrender.com/mcp` (streamable HTTP, rate-limited to 120 requests
-per IP per hour).
+Besides the website, the API serves TourScout's Qloo tools (demand map, venues, openers, sponsors, promo spots…) as an
+**MCP server**, so any MCP client can call them directly:
+
+```
+https://tourscout-api.onrender.com/mcp
+```
+Streamable HTTP, no key needed; limited to 120 requests per IP per hour.
+
+- **Claude Code:** `claude mcp add --transport http tourscout https://tourscout-api.onrender.com/mcp`
+- **Claude Desktop / claude.ai:** Settings → Connectors → **Add custom connector** → paste the URL.
+- **Cursor / others:** add an HTTP (streamable) MCP server with that URL.
+
+Then ask, e.g. *"Where are Hovvdy's fans under-served in the US Midwest? Suggest local openers."*
+
+Only `RENDER_EXTERNAL_HOSTNAME` (set by Render) and `MCP_ALLOWED_HOSTS` are accepted as the `Host`: other hosts get
+`421` (DNS-rebinding protection). On a custom domain, add it to `MCP_ALLOWED_HOSTS`.
 
 ## Troubleshooting
 | Symptom | Fix |
@@ -77,4 +91,5 @@ per IP per hour).
 | `/health` shows `"checkpointer": "sqlite"` | `DATABASE_URL` not set on Render |
 | First request after a while takes ~50 s | Render free tier was asleep: check the UptimeRobot monitor is running |
 | "AI models … at their free-tier limit" | Gemini overloaded and/or Groq's 200k tokens/day used up (evals and drills burn it fast). Wait, or run fewer plans; never run evals on demo day |
+| MCP client gets `421 Misdirected Request` | the hostname isn't allowed: add it to `MCP_ALLOWED_HOSTS` on Render |
 | Build fails downloading GeoNames | geonames.org was briefly down: **Manual Deploy → Clear build cache & deploy** |

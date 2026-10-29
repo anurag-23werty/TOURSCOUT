@@ -132,3 +132,17 @@ async def test_heartbeat_pings_during_silent_steps_and_keeps_every_event() -> No
     out = [chunk async for chunk in with_heartbeat(slow(), 0.03)]
     assert out[0] == "event: step\n\n" and out[-1] == "event: plan\n\n"
     assert ": ping\n\n" in out and len([c for c in out if c.startswith("event")]) == 2
+
+
+def test_mcp_answers_on_its_public_hostname(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # Live bug: the MCP SDK only accepted Host: localhost, so https://<service>.onrender.com/mcp returned 421.
+    monkeypatch.setenv("RENDER_EXTERNAL_HOSTNAME", "tourscout-api.onrender.com")
+    agent = TourAgent(AgentContext(FakeLLM(), FakeTools()))  # type: ignore[arg-type]
+    init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}}
+    headers = {"Accept": "application/json, text/event-stream"}
+    with TestClient(create_app(agent, ApiSettings()), base_url="https://tourscout-api.onrender.com") as c:
+        ok = c.post("/mcp", json=init, headers=headers)
+        assert ok.status_code == 200 and "serverInfo" in ok.text
+    with TestClient(create_app(agent, ApiSettings()), base_url="https://evil.example") as c:
+        assert c.post("/mcp", json=init, headers=headers).status_code == 421  # other hosts stay blocked

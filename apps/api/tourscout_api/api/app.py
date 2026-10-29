@@ -30,6 +30,7 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, Uplo
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from langgraph.types import Command
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field
 
 from .. import personas
@@ -333,7 +334,10 @@ def create_app(agent: TourAgent | None = None, settings: ApiSettings | None = No
         return PlainTextResponse(body, media_type=media, headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
     if mcp_server is not None:
-        mcp_app = mcp_server.streamable_http_app()
+        local = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+        mcp_app = mcp_server.streamable_http_app(transport_security=TransportSecuritySettings(
+            allowed_hosts=[*local, "127.0.0.1", "localhost", *settings.mcp_hosts],
+            allowed_origins=[f"http://{h}" for h in local] + settings.web_origins))
 
         @app.middleware("http")
         async def limit_mcp(request: Request, call_next):  # type: ignore[no-untyped-def]

@@ -16,6 +16,11 @@ class ApiSettings:
     # slash, so one pasted with the URL ("https://x.vercel.app/") would never match: strip it.
     web_origins: list[str] = field(default_factory=lambda: [
         o.strip().rstrip("/") for o in (os.getenv("WEB_ORIGINS") or "http://localhost:5173").split(",") if o.strip()])
+    # Public hostnames the /mcp endpoint answers to. The MCP SDK rejects any other Host header with 421 (DNS-rebinding
+    # protection, localhost-only by default). Render sets RENDER_EXTERNAL_HOSTNAME; MCP_ALLOWED_HOSTS adds e.g. a domain.
+    mcp_hosts: list[str] = field(default_factory=lambda: [
+        h.strip().lower() for h in f"{os.getenv('RENDER_EXTERNAL_HOSTNAME') or ''},{os.getenv('MCP_ALLOWED_HOSTS') or ''}"
+        .split(",") if h.strip()])
     trust_proxy: bool = field(default_factory=lambda: (os.getenv("TRUST_PROXY") or "false").lower() == "true")
     # A plan costs ~3–7 LLM calls and ~60 Qloo calls. Groq's free tier is 1,000 requests/day.
     plans_per_ip_per_hour: int = field(default_factory=lambda: _int("LIMIT_PLANS_PER_IP_HOUR", 6))

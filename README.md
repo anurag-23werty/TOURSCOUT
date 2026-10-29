@@ -26,7 +26,32 @@ TourScout is that analyst. It's an AI agent grounded in **Qloo's taste graph** (
 ## Why it needs Qloo
 Without Qloo, an LLM suggests the obvious big cities and famous openers, and sometimes invents venues.
 TourScout only recommends Qloo entities returned in the run (a validator enforces it), computes every score in code, and
-proves the difference with a built-in **Compare** tab and an eval report (local-opener precision, backtest against real past tours).
+proves the difference with a built-in **Compare** tab and the eval results below.
+
+## Results: TourScout vs an LLM on its own
+30 test artists (US, Europe, India, 4 not on Qloo, 4 edge cases), same request to both planners; the LLM-only planner gets no
+tools. Full method and per-artist numbers: [`evals/reports/summary.md`](evals/reports/summary.md).
+
+| | TourScout | LLM only |
+|---|---|---|
+| Openers actually based in the show's city (MusicBrainz) | **53%** | 3% |
+| Openers that are smaller than the headliner and share a genre | **77%** | 19% |
+| Venues that exist in that city | **100%** | 69% (India: 47%) |
+| Back-to-back long drives without a day off | **0** | 9 |
+| Sponsor lists preferred by a blind judge (Groq gpt-oss-120b) | **19** | 10 |
+| Behaviour checks (prompt injection, empty region, impossible dates, name traps) | **13 / 13** | — |
+
+**Backtest against real tours** (setlist.fm, 12 artists): the share of cities from each artist's most recent real tour
+that land in the top 10 of a ranking. TourScout's demand ranking **42%**, population ranking 34%, random 1%. TourScout
+wins for 9 of the 12 artists. In the top 25 the two are close (63% vs 60%). [`evals/reports/backtest.md`](evals/reports/backtest.md)
+
+**Where TourScout loses or falls short**
+- Speed: a full plan takes **51 s** (p50) vs ~6 s for the LLM alone, above our 45 s goal. Most of it is waiting on the LLM
+  when Gemini's free quota runs out and the fallback chain takes over.
+- 23% of its openers are based somewhere else (Qloo finds acts popular *in* a city, not *from* it; the MusicBrainz badge
+  shows this, and it's why the badge exists).
+- In the US, sponsor quality is a tie (6–6): the LLM's knowledge of who sponsors indie tours (gear, beer) is strong there.
+- 12 artists is a small backtest, and a real tour isn't the best possible tour. Caveats are in each report.
 
 ## Tech
 LangGraph agent · custom TourScout MCP server (Qloo tools) · FastAPI · React + Vite · Google Gemini (primary) ·
@@ -37,7 +62,14 @@ No account needed. Uploaded screenshots are parsed and then deleted. Inputs are 
 to generate plans, and may be used by those providers under their terms.
 
 ## Run locally
-_Full setup arrives in Phases 2–4._ For now: `cp .env.example .env`, add your keys, then `uv run scripts/check_keys.py`.
+```bash
+cp .env.example .env                                   # add QLOO_API_KEY, GEMINI_API_KEY, GROQ_API_KEY
+cd apps/api && uv sync && uv run python ../../data/download_geonames.py
+uv run tourscout-api                                   # API on :8000
+cd ../web && npm install && npm run dev                # app on :5173
+```
+More: [`apps/api/README.md`](apps/api/README.md), [`apps/web/README.md`](apps/web/README.md),
+[`docs/mcp-claude-desktop.md`](docs/mcp-claude-desktop.md) (use the Qloo tools from Claude Desktop).
 
 ## Credits
 Taste data: [Qloo](https://www.qloo.com). Planned: city data [GeoNames](https://www.geonames.org) (CC BY 4.0),

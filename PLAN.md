@@ -159,19 +159,27 @@ open city details, compare with the LLM-only plan and download the CSV/ICS.
 ---
 
 ## Phase 6: Evals (Day 16–18)
-- [ ] Run all personas through TourScout and the baseline.
-- [ ] Metrics: opener locality (MusicBrainz), opener fit, venue grounding, **backtest** (setlist.fm past tours vs our top-N metros vs a population-only baseline), sponsor relevance (blind judge + 5–10 humans), latency/cost.
-- [ ] Tune scoring weights on the backtest. Keep a held-out set so we don't overfit.
-- [ ] README results table, including where TourScout loses.
-- [ ] CI eval smoke test.
+- [x] All 30 personas through TourScout and the LLM-only baseline (`evals/run.py run`), raw outputs git-ignored.
+- [x] Metrics: opener locality (MusicBrainz), opener fit (Qloo popularity + genre), venue grounding (Qloo id or place
+      search), constraints, behaviour checks, blind sponsor judge (Groq), latency.
+- [x] Backtest: setlist.fm real tours vs TourScout demand vs population vs random (12 artists).
+- [x] README results table, including where TourScout loses.
+- [x] Fixes the evals found: sponsor categories (beer, headphones, cameras, sneakers) after the judge preferred the
+      LLM's gear/beer picks; region names ("US East Coast", "South/North India"); Groq "generate JSON" retry; cooling
+      models as a last resort instead of failing a step.
+- [ ] Scoring weights **not** tuned on the backtest: 12 artists is too few to tune without overfitting. Revisit with more.
+- [ ] CI eval smoke test → Phase 7 (with the rest of CI).
+- [ ] Human panel (5–10 people) for sponsor relevance → before submission if time allows.
 
-**Exit:** numbers like "X% of openers local vs Y% for LLM-only; Z% of real tour cities in our top 10".
+**Exit ✅ (29 Oct):** 53% vs 3% local openers, 100% vs 69% venues that exist, 13/13 behaviour checks; backtest top-10
+recall 42% vs 34% for population.
 
 | Step | `git add` | Commit message |
 |---|---|---|
-| 6.1 Harness | `git add evals/run.py evals/metrics/ evals/tests/` | `feat(evals): eval harness for openers, venues and sponsors` |
-| 6.2 Backtest | `git add evals/backtest/` | `feat(evals): setlist.fm backtest of demand ranking` |
-| 6.3 Results | `git add evals/reports/summary.md README.md` | `docs(evals): publish TourScout vs LLM-only results` |
+| 6.1 Fixes found by the evals | `git add packages/tourscout_mcp/src/tourscout_mcp/allowlist.py packages/tourscout_mcp/src/tourscout_mcp/tools/places.py packages/tourscout_mcp/src/tourscout_mcp/tools/demand.py packages/tourscout_mcp/src/tourscout_mcp/server.py packages/tourscout_mcp/tests/test_tools.py apps/api/tourscout_api/agent/graph.py apps/api/tourscout_api/agent/prompts/compose.md apps/api/tourscout_api/core/llm.py apps/api/tourscout_api/personas.py apps/api/tests/test_agent.py apps/api/tests/test_llm_fallback.py` | `fix: sponsor categories, more region names and sturdier LLM fallback (found by evals)` |
+| 6.2 Eval harness | `git add evals/run.py evals/metrics/ evals/tests/test_metrics.py` | `feat(evals): TourScout vs LLM-only harness for openers, venues, constraints, edge cases and sponsors` |
+| 6.3 Backtest | `git add evals/backtest/ evals/tests/test_backtest.py` | `feat(evals): setlist.fm backtest of the demand ranking vs population` |
+| 6.4 Results | `git add evals/reports/summary.md evals/reports/backtest.md evals/README.md README.md PLAN.md` | `docs(evals): publish TourScout vs LLM-only results, including where it loses` |
 
 ---
 

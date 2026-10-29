@@ -12,7 +12,17 @@ Inputs only. **No Qloo data is stored here** (Qloo terms). `reach_synthetic` val
 
 Fields: `id, artist, sounds_like[], home_base, regions[], window[start,end], n_shows, draw[min,max], max_drive_km, past_cities[], reach_synthetic{city: listeners}, notes?, tests[]`.
 
-## Metrics (implemented in Phase 6)
+## Run
+```bash
+cd apps/api
+uv run python ../../evals/run.py run              # TourScout + LLM-only for every persona → reports/raw/ (git-ignored)
+uv run python ../../evals/run.py score            # metrics + blind sponsor judge → reports/summary.md
+uv run python ../../evals/backtest/backtest.py    # needs SETLISTFM_API_KEY → reports/backtest.md
+uv run pytest ../../evals/tests                   # offline tests for the metrics and the backtest
+```
+Results: [`reports/summary.md`](reports/summary.md) · [`reports/backtest.md`](reports/backtest.md).
+
+## Metrics
 | Metric | How | Target |
 |---|---|---|
 | **Opener locality** | % of suggested openers whose MusicBrainz area/begin-area is in the show's metro | TourScout ≫ LLM-only |

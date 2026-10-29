@@ -136,24 +136,25 @@ plan; CSV export and `/mcp` `initialize` worked against the same server.
 ---
 
 ## Phase 5: Frontend (Day 12–15)
-- [ ] One-click demo artists (Men I Trust, Hovvdy, Prateek Kuhad, Easy Wanderlings…).
-- [ ] Intake form + chat; screenshot upload with an editable extracted table.
-- [ ] Live agent timeline.
-- [ ] Demand map (heatmap layer + unserved/proven pins) and route line.
-- [ ] City cards: venues, openers (with "local" badge), sponsors (affinity bars), promo spots.
-- [ ] Sponsor pitch and opener DM drawers with copy buttons; CSV/ICS download.
-- [ ] Compare tab: LLM-only vs TourScout with flags (not local, not found, bigger than headliner).
-- [ ] Mobile responsive; loading, empty and error states.
+- [x] `apps/web`: React 19 + Vite + Tailwind 4 + react-leaflet, typed API client with a fetch-based SSE parser.
+- [x] Home: request form, featured demo artists, CSV/screenshot upload, "let me confirm" toggle.
+- [x] Live agent steps, "Is this you?" (incl. "none of these, use artists I sound like") and "Pick your cities" checkpoints.
+- [x] Demand map (circles by label and demand) + numbered route; the plan as a tour poster; city card with venue,
+      openers + hometown badge, brands, poster spots, on-demand opener DM.
+- [x] Refine bar, CSV / ICS downloads, Compare (LLM-only) and Drafts tabs; responsive to 390 px.
+- [x] Verified in headless Chrome against the live API: full flow with both checkpoints, mobile plan view, Compare; 0 console errors.
+- [x] Fixes found on the way: CARTO tiles now need a key → Esri light-gray canvas; ratings rounded; plan stops carry
+      coordinates; the pick-cities list always includes every suggested city.
 
-**Exit:** a stranger plans a tour end-to-end in under 3 minutes with no instructions.
+**Exit ✅ (29 Oct):** a visitor can plan Hovvdy's tour end to end in the browser, answer both checkpoints, read the poster,
+open city details, compare with the LLM-only plan and download the CSV/ICS.
 
 | Step | `git add` | Commit message |
 |---|---|---|
-| 5.1 Scaffold | `git add apps/web/package.json apps/web/package-lock.json apps/web/vite.config.ts apps/web/index.html apps/web/src/main.tsx apps/web/tailwind.config.js` | `feat(web): scaffold React + Vite + Tailwind app` |
-| 5.2 Intake + timeline | `git add apps/web/src/` | `feat(web): artist intake, demo personas and live agent timeline` |
-| 5.3 Map + route | `git add apps/web/src/components/DemandMap.tsx apps/web/src/components/RouteLine.tsx` | `feat(web): demand map with unserved and proven cities and tour route` |
-| 5.4 City cards | `git add apps/web/src/components/city/` | `feat(web): city cards for venues, local openers, sponsors and promo spots` |
-| 5.5 Compare | `git add apps/web/src/pages/Compare.tsx` | `feat(web): compare LLM-only plan with TourScout plan` |
+| 5.1 Backend support for the UI | `git add packages/tourscout_mcp/src/tourscout_mcp/qloo.py apps/api/tourscout_api/agent/outputs.py apps/api/tourscout_api/agent/graph.py apps/api/tests/test_outputs.py apps/api/tests/test_agent.py` | `feat(api): stop coordinates, rounded ratings and full suggested-city list for the web UI` |
+| 5.2 Web scaffold + API client | `git add .gitignore apps/web/package.json apps/web/package-lock.json apps/web/vite.config.ts apps/web/tsconfig.json apps/web/index.html apps/web/.env.example apps/web/public/ apps/web/src/main.tsx apps/web/src/index.css apps/web/src/types.ts apps/web/src/api.ts apps/web/src/format.ts apps/web/src/useTour.ts apps/web/src/api.test.ts apps/web/src/format.test.ts` | `feat(web): Vite + React + Tailwind scaffold, typed API client and SSE run state` |
+| 5.3 Screens | `git add apps/web/src/App.tsx apps/web/src/components/` | `feat(web): request form, live steps, checkpoints, demand map, tour poster, city card, compare and drafts` |
+| 5.4 Docs | `git add apps/web/README.md PLAN.md` | `docs(web): run, layout and design notes for the web app` |
 
 ---
 

@@ -58,8 +58,24 @@ async def find_promo_spots(
     }
 
 
-async def find_sponsors(deps: Deps, artist_ids: list[str], cities: list[str] | None = None, take: int = 10) -> dict[str, Any]:
+# Categories that actually sponsor tours. Phase 6 evals: Qloo's overall top brands for indie fans are almost all fashion
+# labels, and a blind judge preferred the LLM-only plan's gear and beer picks. Asking Qloo per category keeps every
+# brand grounded in the fans' taste while giving a realistic sponsor mix.
+SPONSOR_CATEGORIES = {
+    "beer": "urn:tag:genre:brand:wine_and_spirits:beer",
+    "headphones": "urn:tag:genre:brand:electronics:headphones",
+    "cameras": "urn:tag:genre:brand:electronics:camera_and_video",
+    "sneakers": "urn:tag:genre:brand:fashion:footwear:sneakers",
+}
+
+
+async def find_sponsors(deps: Deps, artist_ids: list[str], cities: list[str] | None = None, take: int = 10,
+                        categories: list[str] | None = None, per_category: int = 3) -> dict[str, Any]:
     cities = cities or []
+    categories = list(SPONSOR_CATEGORIES) if categories is None else categories
+    unknown = [c for c in categories if c not in SPONSOR_CATEGORIES]
+    if unknown:
+        raise ValueError(f"unknown sponsor categories {unknown}; choose from {list(SPONSOR_CATEGORIES)}")
 
     def fetch(city: str | None):  # type: ignore[no-untyped-def]
         params: dict[str, Any] = {"signal.interests.entities": artist_ids, "take": take}
@@ -67,7 +83,12 @@ async def find_sponsors(deps: Deps, artist_ids: list[str], cities: list[str] | N
             params["signal.location.query"] = city
         return lambda: deps.qloo.insights(BRAND, **params)
 
-    national, *per_city = await gather([fetch(None), *(fetch(c) for c in cities)])
+    def fetch_category(name: str):  # type: ignore[no-untyped-def]
+        return lambda: deps.qloo.insights(BRAND, **{"signal.interests.entities": artist_ids,
+                                                    "filter.tags": SPONSOR_CATEGORIES[name], "take": per_category})
+
+    national, *rest = await gather([fetch(None), *(fetch(c) for c in cities), *(fetch_category(c) for c in categories)])
+    per_city, per_category_rows = rest[: len(cities)], rest[len(cities) :]
     nat = {b["entity_id"]: affinity(b) or 0.0 for b in national}
     city_out = []
     for city, rows in zip(cities, per_city):
@@ -81,4 +102,5 @@ async def find_sponsors(deps: Deps, artist_ids: list[str], cities: list[str] | N
                 row["uplift"], row["new_in_city"] = None, True  # not in the national top list: a local angle
             brands.append(row)
         city_out.append({"city": city, "brands": brands})
-    return {"national": [trim_brand(b) for b in national], "cities": city_out}
+    by_category = {name: [{**trim_brand(b), "category": name} for b in rows] for name, rows in zip(categories, per_category_rows)}
+    return {"national": [trim_brand(b) for b in national], "cities": city_out, "by_category": by_category}

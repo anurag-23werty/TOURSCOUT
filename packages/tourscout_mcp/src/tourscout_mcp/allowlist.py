@@ -28,6 +28,7 @@ INSIGHTS: dict[str, set[str]] = {
     "urn:entity:brand": {
         "signal.interests.entities",
         "signal.location.query",
+        "filter.tags",  # verified in Phase 6: urn:tag:genre:brand:… narrows to a category (beer, headphones…)
         "signal.demographics.age",
         "bias.trends",
     },

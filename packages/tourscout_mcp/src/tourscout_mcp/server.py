@@ -82,10 +82,12 @@ async def find_openers(headliner_id: str, cities: list[str], take: int = 6, chec
 
 
 @mcp.tool(annotations=READ_ONLY)
-async def find_sponsors(artist_ids: list[str], cities: list[str] | None = None, take: int = 10) -> dict[str, Any]:
+async def find_sponsors(artist_ids: list[str], cities: list[str] | None = None, take: int = 10,
+                        categories: list[str] | None = None) -> dict[str, Any]:
     """Brands the artist's fans love, nationally and per city. uplift = city affinity − national affinity;
-    new_in_city=true means the brand only shows up with the city signal (a local sponsor angle)."""
-    return await _call(places.find_sponsors, artist_ids, cities, take)
+    new_in_city=true means the brand only shows up with the city signal (a local sponsor angle). by_category gives the
+    fans' top brands in tour-sponsor categories: beer, headphones, cameras, sneakers (default: all)."""
+    return await _call(places.find_sponsors, artist_ids, cities, take, categories)
 
 
 @mcp.tool(annotations=READ_ONLY)

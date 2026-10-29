@@ -23,7 +23,8 @@ def to_inputs(persona: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Persona row → (intake, reach_input)."""
     window, draw = persona.get("window") or [None, None], persona.get("draw") or [None, None]
     intake = {
-        "artist": persona["artist"], "sounds_like": persona.get("sounds_like", []), "home_base": persona["home_base"],
+        # nq-04 is a brand-new act with no name yet: it must go down the "sounds like" path.
+        "artist": persona["artist"] or "Untitled new artist", "sounds_like": persona.get("sounds_like", []), "home_base": persona["home_base"],
         "regions": persona["regions"], "start_date": window[0], "end_date": window[1], "n_shows": persona["n_shows"],
         "draw_min": draw[0], "draw_max": draw[1], "max_drive_km": persona.get("max_drive_km", 600),
         "past_cities": persona.get("past_cities", []),

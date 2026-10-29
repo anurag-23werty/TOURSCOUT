@@ -55,8 +55,18 @@ async def test_503_tries_lite_then_groq_and_opens_breakers() -> None:
     assert (await llm.json(Intake, "x")).n_shows == 6
     assert seen == ["gemini", "gemini", "groq"]
     assert "high demand" in llm.calls[0].error
-    await llm.json(Intake, "again")  # breaker open: straight to Groq, no waiting on Gemini
+    await llm.json(Intake, "again")  # breakers open: Groq first, the cooling Geminis only as a last resort
     assert seen[3:] == ["groq"]
+
+
+async def test_cooling_models_are_a_last_resort_not_dropped() -> None:
+    answers = iter([httpx.Response(503, json={}), httpx.Response(503, json={}), gemini_ok(GOOD)])
+    handler, seen = router(lambda r: next(answers), lambda r: httpx.Response(500, json={}))
+    llm = LLM(SETTINGS, httpx.MockTransport(handler))
+    with pytest.raises(LLMUnavailable):
+        await llm.json(Intake, "x")  # main 503, lite 503, Groq 500 → both Geminis now cooling
+    assert (await llm.json(Intake, "y")).artist == "Hovvdy"  # Groq fails again, a cooling Gemini answers
+    assert seen == ["gemini", "gemini", "groq", "groq", "gemini"]
 
 
 async def test_timeout_falls_back() -> None:
@@ -117,6 +127,13 @@ async def test_groq_schema_rejection_retries_in_json_mode() -> None:
     llm = LLM(LLMSettings(gemini_key="", groq_key="q"), httpx.MockTransport(handler))
     await llm.json(Intake, "x")
     assert bodies[0]["response_format"]["type"] == "json_schema" and bodies[1]["response_format"] == {"type": "json_object"}
+
+
+async def test_groq_generate_json_error_also_retries_in_json_mode() -> None:
+    answers = iter([httpx.Response(400, json={"error": {"message": "Failed to generate JSON. Please adjust your prompt."}}), groq_ok(GOOD)])
+    handler, _ = router(lambda r: pytest.fail("gemini called"), lambda r: next(answers))
+    llm = LLM(LLMSettings(gemini_key="", groq_key="q"), httpx.MockTransport(handler))
+    assert (await llm.json(Intake, "x")).n_shows == 6
 
 
 async def test_lite_tier_never_uses_main_model() -> None:

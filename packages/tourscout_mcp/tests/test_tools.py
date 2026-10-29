@@ -39,6 +39,8 @@ def qloo_router(request: httpx.Request) -> httpx.Response:
             return entities(place("V2", "Small Club", 0.95), place("V3", "Basement", 0.91))
         return entities(place("R1", "Records", 0.9), place("R2", "No Address", 0.95, None))
     if kind == "urn:entity:brand":
+        if p.get("filter.tags"):
+            return entities({"entity_id": "C-" + p["filter.tags"].rsplit(":", 1)[-1], "name": "Category Brand", "query": {"affinity": 0.9}})
         if city:
             return entities({"entity_id": "B1", "name": "Big Brand", "query": {"affinity": 0.95}},
                             {"entity_id": "B3", "name": "Local Brand", "query": {"affinity": 0.97}})
@@ -103,6 +105,10 @@ async def test_sponsors_city_uplift(deps: Deps) -> None:
     brands = {b["name"]: b for b in result["cities"][0]["brands"]}
     assert brands["Big Brand"]["uplift"] == 0.05
     assert brands["Local Brand"]["new_in_city"] is True
+    assert result["by_category"]["beer"][0] == {"id": "C-beer", "name": "Category Brand", "affinity": 0.9, "popularity": None,
+                                                "category": "beer"}
+    with pytest.raises(ValueError, match="unknown sponsor categories"):
+        await places.find_sponsors(deps, ["H"], ["Chicago"], categories=["yachts"])
 
 
 async def test_promo_spots_validate_kinds_and_need_address(deps: Deps) -> None:
@@ -133,6 +139,7 @@ def test_expand_region() -> None:
     assert demand.expand_region("the PNW, Idaho") == ["Oregon", "Washington", "Idaho"]
     assert "Wisconsin" in demand.expand_region("midwest")
     assert demand.expand_region("US Midwest") == demand.expand_region("Midwest")
+    assert "Kerala" in demand.expand_region("South India") and "Florida" in demand.expand_region("US East Coast")
 
 
 async def test_server_exposes_seven_read_only_tools() -> None:

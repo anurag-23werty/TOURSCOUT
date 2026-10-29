@@ -12,7 +12,9 @@ Instructions:
   is 12: fans you aren't reaching yet. Snarls are based here, and the venue has the strongest fan affinity in town."
   Don't mention capacity in "why" (the plan already shows it as unknown); put it once in risks.
 - headline: one line. summary: 2–3 sentences about the shape of the tour (unserved vs proven cities, total km).
-- sponsor_strategy: which brands to approach and why, from the sponsor data (uplift, new_in_city).
+- sponsor_ids: prefer a mix: one brand with a "category" (beer, headphones, cameras, sneakers: the kinds of brands that
+  sponsor tours) plus a city brand with uplift or new_in_city.
+- sponsor_strategy: which brands to approach and why, from the sponsor data (category, uplift, new_in_city).
 - risks: missing data or long drives, from the facts.
 - Use only numbers that appear in FACTS.
 {feedback}

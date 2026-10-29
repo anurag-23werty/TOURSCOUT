@@ -58,12 +58,18 @@ def merge(*updates: dict[str, Any]) -> dict[str, Any]:
 COMPOSE_FIELDS = {
     "venues": ("id", "name", "rating", "affinity"),
     "openers": ("id", "name", "badge", "fit"),
-    "sponsors": ("id", "name", "uplift", "new_in_city"),
+    "sponsors": ("id", "name", "uplift", "new_in_city", "category"),
     "promo": ("id", "name", "kind"),
 }
 
 
-COMPOSE_TOP = 3  # candidates per category per city shown to the composer
+COMPOSE_TOP = 3  # candidates per category per city shown to the composer (sponsors: see COMPOSE_TOP_SPONSORS)
+COMPOSE_TOP_SPONSORS = 7  # 3 city brands + up to 4 category picks
+
+
+def _dedupe(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    return [r for r in rows if not (r["id"] in seen or seen.add(r["id"]))]
 
 
 def aliased(intel: dict[str, Any], cities: list[str]) -> tuple[dict[str, Any], dict[str, str]]:
@@ -79,7 +85,8 @@ def aliased(intel: dict[str, Any], cities: list[str]) -> tuple[dict[str, Any], d
         compact: dict[str, Any] = {}
         for key, fields in COMPOSE_FIELDS.items():
             rows = []
-            for j, row in enumerate(intel.get(city, {}).get(key, [])[:COMPOSE_TOP], 1):
+            top = COMPOSE_TOP_SPONSORS if key == "sponsors" else COMPOSE_TOP
+            for j, row in enumerate(intel.get(city, {}).get(key, [])[:top], 1):
                 if key == "sponsors":
                     alias = brands.setdefault(row["id"], f"b{len(brands) + 1}")
                 else:
@@ -273,6 +280,10 @@ def build_graph(ctx: AgentContext, checkpointer: Any = None):  # type: ignore[no
 
         opener_by = {c["city"]: c["openers"] for c in openers["cities"]}
         sponsor_by = {c["city"]: c["brands"] for c in sponsors["cities"]}
+        # Every city also gets one brand per tour-sponsor category (beer, headphones, cameras, sneakers): the best-known of
+        # the fans' top 3 in that category, because a sponsor needs reach (Phase 6: the top beer pick was an obscure "House").
+        category_picks = [max(rows, key=lambda b: b.get("popularity") or 0)
+                          for rows in (sponsors.get("by_category") or {}).values() if rows]
         intel = {}
         for city, v, p in zip(cities, venues, promos):
             promo = [{**s, "kind": kind} for kind, spots in ((p or {}).get("spots") or {}).items() for s in spots]
@@ -280,7 +291,7 @@ def build_graph(ctx: AgentContext, checkpointer: Any = None):  # type: ignore[no
                 "venues": [{k: x.get(k) for k in ("id", "name", "address", "rating", "affinity")} for x in (v or {}).get("venues", [])],
                 "openers": [{k: o.get(k) for k in ("id", "name", "badge", "home", "fit", "score", "popularity")}
                             for o in opener_by.get(city, [])],
-                "sponsors": sponsor_by.get(city, []),
+                "sponsors": _dedupe(sponsor_by.get(city, [])[:3] + category_picks),
                 "promo": [{k: x.get(k) for k in ("id", "name", "kind", "address")} for x in promo],
             }
         empty = [c for c in cities if not intel[c]["venues"]]

@@ -123,9 +123,13 @@ class LLM:
             geminis = [("gemini", m) for m in dict.fromkeys(models)]
         if needs_vision:
             return geminis  # tried even when the breaker is open: Groq can't read images
-        geminis = [(p, m) for p, m in geminis if time.monotonic() >= self._down_until.get(m, 0.0)]
+        cooling = [(p, m) for p, m in geminis if time.monotonic() < self._down_until.get(m, 0.0)]
+        geminis = [g for g in geminis if g not in cooling]
         groq = [("groq", self.s.groq_model)] if self.s.groq_key else []
-        return groq + geminis if self.s.primary == "groq" else geminis + groq
+        chain = groq + geminis if self.s.primary == "groq" else geminis + groq
+        # Models in cooldown go last instead of being dropped: a cooling model beats failing the whole step
+        # (Phase 6: Gemini lite was cooling down and Groq returned 429, so a plan failed at its first step).
+        return chain + cooling
 
     def _trip(self, model: str) -> None:
         self._down_until[model] = time.monotonic() + self.s.cooldown_s
@@ -192,7 +196,7 @@ class LLM:
             await anyio.sleep(exc.retry_after)  # free tier: 8k tokens/minute, usually clears in seconds
             data = await self._post(GROQ_URL, headers, body, timeout)
         except _ProviderError as exc:
-            if not (schema and "validate JSON" in exc.reason):
+            if not (schema and ("validate JSON" in exc.reason or "generate JSON" in exc.reason)):
                 raise
             # Groq checks json_schema server-side and rejects near-misses; ask for plain JSON and validate ourselves.
             body["response_format"] = {"type": "json_object"}

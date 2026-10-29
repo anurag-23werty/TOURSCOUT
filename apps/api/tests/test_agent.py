@@ -70,7 +70,8 @@ class FakeTools:
 
     async def find_sponsors(self, ids: list[str], cities: list[str], take: int = 6) -> dict[str, Any]:
         return {"national": [{"id": "B1", "name": "Baggu", "affinity": 0.98}],
-                "cities": [{"city": c, "brands": [{"id": "B1", "name": "Baggu", "uplift": 0.01, "new_in_city": False}]} for c in cities]}
+                "cities": [{"city": c, "brands": [{"id": "B1", "name": "Baggu", "uplift": 0.01, "new_in_city": False}]} for c in cities],
+                "by_category": {"beer": [{"id": "BEER1", "name": "Hamm's", "category": "beer"}], "cameras": []}}
 
     async def aclose(self) -> None:
         pass
@@ -268,3 +269,10 @@ async def test_pick_cities_lists_every_suggested_city() -> None:
     listed = [m["metro"] for m in pick["metros"]]
     assert set(pick["selected"]) <= set(listed) and listed[: len(pick["selected"])] == [
         m for m in listed if m in pick["selected"]]
+
+
+async def test_every_city_gets_category_sponsors_once() -> None:
+    a, _, _ = agent()
+    out = await a.start("t14", intake=HOVVDY, auto_approve=True)
+    for city in out["state"]["intel"].values():
+        assert [b["id"] for b in city["sponsors"]] == ["B1", "BEER1"]

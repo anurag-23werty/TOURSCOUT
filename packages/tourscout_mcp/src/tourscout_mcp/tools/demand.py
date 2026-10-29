@@ -24,6 +24,14 @@ REGIONS = {
     "pacific northwest": ["Oregon", "Washington"],
     "mountain west": ["Colorado", "Idaho", "Montana", "Nevada", "Utah", "Wyoming"],
     "great lakes": ["Illinois", "Indiana", "Michigan", "Minnesota", "Ohio", "Wisconsin", "New York", "Pennsylvania"],
+    "east coast": ["Maine", "New Hampshire", "Massachusetts", "Rhode Island", "Connecticut", "New York", "New Jersey",
+                   "Pennsylvania", "Delaware", "Maryland", "District of Columbia", "Virginia", "North Carolina",
+                   "South Carolina", "Georgia", "Florida"],
+    "south": ["Texas", "Oklahoma", "Arkansas", "Louisiana", "Mississippi", "Alabama", "Tennessee", "Kentucky", "Georgia",
+              "Florida", "South Carolina", "North Carolina", "Virginia"],
+    # India: Qloo understands states, not "South/North India" (Phase 6 evals).
+    "south india": ["Karnataka", "Kerala", "Tamil Nadu", "Telangana", "Andhra Pradesh"],
+    "north india": ["Delhi", "Haryana", "Punjab", "Uttar Pradesh", "Rajasthan", "Uttarakhand", "Himachal Pradesh", "Chandigarh"],
 }
 REGIONS["pnw"] = REGIONS["pacific northwest"]
 

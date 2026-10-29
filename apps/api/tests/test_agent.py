@@ -259,3 +259,12 @@ async def test_refine_with_human_in_the_loop_doesnt_ask_again() -> None:
     await a.resume("t12", {"accept": True})
     after = await a.refine("t12", "skip Detroit")
     assert after["done"] and after["interrupt"] is None
+
+
+async def test_pick_cities_lists_every_suggested_city() -> None:
+    a, _, _ = agent()
+    await a.start("t13", intake=HOVVDY, reach_input={"rows": [{"city": "Milwaukee", "listeners": 9000}]})
+    pick = (await a.resume("t13", {"choice": "HV"}))["interrupt"]
+    listed = [m["metro"] for m in pick["metros"]]
+    assert set(pick["selected"]) <= set(listed) and listed[: len(pick["selected"])] == [
+        m for m in listed if m in pick["selected"]]

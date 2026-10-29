@@ -214,11 +214,15 @@ def build_graph(ctx: AgentContext, checkpointer: Any = None):  # type: ignore[no
         # what they want).
         if state.get("auto_approve") or state.get("swaps") or state.get("refined"):
             return {"refined": False}
+        # The suggested cities first (a proven anchor can rank below the top 20 on demand), then the best alternatives.
+        suggested = [m for m in state["metros"] if m["metro"] in state["selected"]]
+        alternatives = [m for m in state["metros"] if m["metro"] not in state["selected"]]
+        rows = suggested + alternatives[: max(10, 20 - len(suggested))]
         answer = interrupt({
             "type": "pick_cities",
             "question": "These cities have the best mix of demand and reach. Change any?",
             "selected": state["selected"],
-            "metros": [{k: m[k] for k in ("metro", "demand", "reach", "gap", "label")} for m in state["metros"][:20]],
+            "metros": [{k: m[k] for k in ("metro", "demand", "reach", "gap", "label")} for m in rows],
         })
         selected = [m for m in answer.get("selected", state["selected"]) if any(x["metro"] == m for x in state["metros"])]
         return merge({"selected": selected or state["selected"]}, event("pick_cities", f"{len(selected)} cities confirmed"))

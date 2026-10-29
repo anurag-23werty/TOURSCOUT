@@ -152,7 +152,7 @@ def trim_place(item: dict[str, Any]) -> dict[str, Any]:
         "address": props.get("address"),
         "lat": loc.get("lat"),
         "lon": loc.get("lon"),
-        "rating": props.get("business_rating"),
+        "rating": round_or_none(props.get("business_rating"), 1),
         "affinity": round_or_none(affinity(item)),
         "popularity": round_or_none(item.get("popularity")),
     }

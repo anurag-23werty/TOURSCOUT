@@ -19,7 +19,7 @@ INTEL = {"Columbus, OH": {
     "sponsors": [{"id": "B1", "name": "Baggu", "affinity": 0.98}],
     "promo": [{"id": "P1", "name": "Used Kids Records"}],
 }}
-METROS = {"Columbus, OH": {"label": "unserved", "demand": 82.0, "reach": 12.0, "gap": 70.0}}
+METROS = {"Columbus, OH": {"label": "unserved", "demand": 82.0, "reach": 12.0, "gap": 70.0, "lat": 39.96, "lon": -83.0}}
 ARTIST = {"name": "Hovvdy", "on_qloo": True}
 
 
@@ -32,6 +32,7 @@ def test_plan_resolves_names_from_ids() -> None:
     stop = p["stops"][0]
     assert stop["venue"]["name"] == "Rumba Café" and stop["backup_venues"][0]["name"] == "Ace of Cups"
     assert stop["openers"][0]["name"] == "Snarls" and stop["label"] == "unserved"
+    assert (stop["lat"], stop["lon"]) == (39.96, -83.0)  # the web map draws the route from these
     assert "demand 82" in stop["why"]
 
 

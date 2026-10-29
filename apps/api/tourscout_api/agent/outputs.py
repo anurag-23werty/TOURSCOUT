@@ -56,6 +56,8 @@ def build_plan(artist: dict[str, Any], brief: Brief, route: dict[str, Any], inte
         stops.append({
             "date": r["date"],
             "metro": r["metro"],
+            "lat": m.get("lat"),
+            "lon": m.get("lon"),
             "drive_km": r.get("drive_km"),
             "travel_day_before": r.get("travel_day_before", False),
             "label": m.get("label"),

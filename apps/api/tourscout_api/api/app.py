@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import anyio
+import httpx
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
@@ -45,7 +46,7 @@ from ..agent.runner import TourAgent
 from ..baseline import plan_baseline
 from ..core import checkpoint
 from ..core.llm import LLMUnavailable
-from .auth import AuthError, JwtVerifier, User
+from .auth import AccountDeleter, AuthError, JwtVerifier, User
 from .plans import PlanStore, make_plan_store
 from .ratelimit import Limiter
 from .sessions import Session, SessionStore
@@ -126,7 +127,8 @@ class OutreachRequest(BaseModel):
 
 
 def create_app(agent: TourAgent | None = None, settings: ApiSettings | None = None, mount_mcp: bool = True,
-               plan_store: PlanStore | None = None, verifier: JwtVerifier | None = None) -> FastAPI:
+               plan_store: PlanStore | None = None, verifier: JwtVerifier | None = None,
+               deleter: AccountDeleter | None = None) -> FastAPI:
     """Tests inject the agent, a memory plan store and a verifier with a local key; production reads the env."""
     settings = settings or ApiSettings()
     if plan_store is None:
@@ -136,6 +138,8 @@ def create_app(agent: TourAgent | None = None, settings: ApiSettings | None = No
     plans: PlanStore = plan_store
     if verifier is None and agent is None:
         verifier = JwtVerifier.from_env()
+    if deleter is None and agent is None:
+        deleter = AccountDeleter.from_env()
     sessions = SessionStore(settings.session_ttl_s)
     uploads = UploadStore(settings.upload_max_bytes, settings.upload_ttl_s)
     limiter = Limiter(
@@ -431,14 +435,31 @@ def create_app(agent: TourAgent | None = None, settings: ApiSettings | None = No
             return {"moved": 0}  # expired or unknown: nothing to move (no error, the web app calls this blindly)
         return {"moved": await plans.transfer(f"guest:{body.session_id}", owner.key)}
 
-    @app.delete("/api/me/plans")
-    async def delete_my_plans(request: Request, owner: Owner = Depends(user_dep)) -> dict[str, Any]:
-        """Part of deleting an account: every tour and its saved run. (The login itself is deleted in Neon Auth.)"""
+    async def delete_tours_of(request: Request, owner: Owner) -> int:
         rows = await plans.list_for(owner.key, limit=10_000)
         for row in rows:
             await agent_of(request).delete(row.thread_id)
             await plans.delete(row.thread_id)
-        return {"deleted": len(rows)}
+        return len(rows)
+
+    @app.delete("/api/me/plans")
+    async def delete_my_plans(request: Request, owner: Owner = Depends(user_dep)) -> dict[str, Any]:
+        """Every tour of this account and its saved run; the account stays."""
+        return {"deleted": await delete_tours_of(request, owner)}
+
+    @app.delete("/api/me")
+    async def delete_account(request: Request, owner: Owner = Depends(user_dep)) -> dict[str, Any]:
+        """Delete the account: tours first (they're ours), then the login in Neon Auth."""
+        deleted = await delete_tours_of(request, owner)
+        if deleter is None:
+            log.warning("account deletion for %s: NEON_API_KEY/NEON_PROJECT_ID/NEON_BRANCH_ID not set", owner.key)
+            return {"deleted": deleted, "login_deleted": False}
+        try:
+            await deleter.delete(owner.user.id)  # type: ignore[union-attr]
+        except (httpx.HTTPError, RuntimeError):
+            log.exception("couldn't delete login %s in Neon Auth", owner.key)
+            raise HTTPException(502, "your tours are deleted, but removing the login failed; please try again") from None
+        return {"deleted": deleted, "login_deleted": True}
 
     if mcp_server is not None:
         local = ["127.0.0.1:*", "localhost:*", "[::1]:*"]

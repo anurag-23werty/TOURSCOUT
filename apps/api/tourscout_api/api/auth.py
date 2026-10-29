@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
 import anyio
+import httpx
 import jwt
 
 
@@ -60,3 +62,29 @@ class JwtVerifier:
             raise AuthError("this account is suspended")
         return User(id=str(claims["sub"]), email=str(claims.get("email") or ""), name=str(claims.get("name") or ""),
                     email_verified=bool(claims.get("emailVerified")))
+
+
+class AccountDeleter:
+    """Removes a login from Neon Auth (self-service /delete-user is off in managed Neon Auth, so the API does it).
+
+    Needs a Neon API key with access to the project, plus the project and branch ids (Neon console → Settings).
+    """
+
+    API = "https://console.neon.tech/api/v2"
+
+    def __init__(self, api_key: str, project_id: str, branch_id: str, http: httpx.AsyncClient | None = None) -> None:
+        self.url = f"{self.API}/projects/{project_id}/branches/{branch_id}/auth/users"
+        self.headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
+        self.http = http
+
+    @classmethod
+    def from_env(cls) -> "AccountDeleter | None":
+        key, project, branch = (os.getenv(n, "").strip() for n in ("NEON_API_KEY", "NEON_PROJECT_ID", "NEON_BRANCH_ID"))
+        return cls(key, project, branch) if key and project and branch else None
+
+    async def delete(self, user_id: str) -> None:
+        async with (httpx.AsyncClient(timeout=15) if self.http is None else nullcontext(self.http)) as http:
+            r = await http.delete(f"{self.url}/{user_id}", headers=self.headers)
+        if r.status_code not in (200, 202, 204, 404):  # 404: already gone
+            raise RuntimeError(f"Neon API answered {r.status_code}")
+

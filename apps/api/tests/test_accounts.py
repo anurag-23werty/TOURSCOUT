@@ -17,7 +17,7 @@ from test_api import events
 from tourscout_api.agent.graph import AgentContext
 from tourscout_api.agent.runner import TourAgent
 from tourscout_api.api.app import create_app
-from tourscout_api.api.auth import AuthError, JwtVerifier
+from tourscout_api.api.auth import AccountDeleter, AuthError, JwtVerifier
 from tourscout_api.api.plans import MemoryPlanStore, PostgresPlanStore, SQLitePlanStore
 from tourscout_api.api.settings import ApiSettings
 
@@ -145,6 +145,30 @@ def test_delete_all_my_tours_removes_the_saved_runs(app_client) -> None:  # type
     assert app_client.delete("/api/me/plans", headers=bearer("u1")).json() == {"deleted": 2}
     for t in threads:
         assert app_client.portal.call(agent.state, t)["state"] == {}  # checkpoints gone, not just the index
+
+
+def test_delete_account_removes_tours_then_the_neon_login() -> None:
+    import httpx
+
+    calls: list[tuple[str, str, str]] = []
+
+    def neon(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path, request.headers["authorization"]))
+        return httpx.Response(204)
+
+    deleter = AccountDeleter("napi_test", "proj-1", "br-1", http=httpx.AsyncClient(transport=httpx.MockTransport(neon)))
+    agent = TourAgent(AgentContext(FakeLLM(), FakeTools()))  # type: ignore[arg-type]
+    with TestClient(create_app(agent, ApiSettings(), mount_mcp=False, verifier=verifier, deleter=deleter)) as c:
+        plan(c, bearer("u9"))
+        assert c.request("DELETE", "/api/me", headers=bearer("u9")).json() == {"deleted": 1, "login_deleted": True}
+        assert c.get("/api/me/plans", headers=bearer("u9")).json() == []
+    assert calls == [("DELETE", "/api/v2/projects/proj-1/branches/br-1/auth/users/u9", "Bearer napi_test")]
+
+
+def test_delete_account_without_neon_api_key_still_deletes_tours(app_client) -> None:  # type: ignore[no-untyped-def]
+    plan(app_client, bearer("u1"))
+    assert app_client.request("DELETE", "/api/me", headers=bearer("u1")).json() == {"deleted": 1, "login_deleted": False}
+    assert app_client.request("DELETE", "/api/me", headers={"X-Session-Id": "x"}).status_code == 401  # guests can't
 
 
 def test_guests_still_work_and_sign_in_off_is_explicit() -> None:

@@ -82,27 +82,34 @@ Repo public with MIT license, keys received (Qloo, Gemini), accounts, docs scaff
 ---
 
 ## Phase 3: Scoring engine + agent (Day 6–10)
-- [ ] `apps/api/scoring/`: metro aggregation, demand, reach, gap labels, route (nearest-neighbour + 2-opt, drive limits). 100% unit-tested.
-- [ ] Reach ingest: Gemini reads a streaming-dashboard screenshot → `{city, listeners}` table, confirmed by the user; CSV upload option.
-- [ ] LangGraph graph with nodes 1–10, state, Postgres checkpointer, two human-in-the-loop interrupts.
-- [ ] "Sounds like" fallback for artists not in Qloo.
-- [ ] Grounding validator (IDs + quoted numbers + constraints) with a retry loop.
-- [ ] Outputs: tour brief, sponsor pitch, opener DM, CSV/ICS export.
-- [ ] Refine router ("skip Texas", "add a day off", "rooms under 500").
-- [ ] Model layer: Gemini main/lite with automatic Groq fallback; log `modelVersion`.
-- [ ] LLM-only baseline planner.
-- [ ] Langfuse tracing.
+- [x] `apps/api/tourscout_api/scoring/`: demand (shrinkage × log population), reach (sqrt listeners), gap labels, city selection, routing (nearest-neighbour + 2-opt, travel/rest days, drive and window limits). Unit-tested.
+- [x] Reach ingest: rows, CSV, or a streaming-dashboard screenshot read by Gemini (mocked test; needs a real screenshot check in Phase 5).
+- [x] LangGraph graph: intake → resolve → ⏸confirm → reach → demand → score → ⏸pick → route → fan-out (venue swap loop) → compose ⇄ validate → outputs; refine on the same thread.
+- [x] "Sounds like" fallback (user names or LLM suggestions, each grounded on Qloo).
+- [x] Grounding validator (ids, numbers, route coverage) with ≤ 2 retries and per-stop salvage.
+- [x] Outputs: plan with names from ids, CSV/ICS export, sponsor pitch, opener DM.
+- [x] Refine router ("skip Detroit", "only 6 shows", "max 400 km a day").
+- [x] Model layer: Gemini main → lite → Groq, circuit breakers, Groq retry-after / JSON-mode retry, every call logged.
+- [x] LLM-only baseline planner.
+- [ ] Postgres checkpointer → Phase 4 (in-memory checkpointer for CLI/tests now).
+- [ ] Langfuse tracing → Phase 4 (every LLM call and node event is already in state: `llm_calls`, `events`).
 
-**Exit:** CLI run produces a full 10-date plan for Hovvdy (on Qloo) and for Easy Wanderlings ("sounds like" path), fully grounded and traced.
+**Exit ✅ (29 Oct):** `uv run tourscout --persona us-02 --auto` → grounded 10-date Hovvdy Midwest plan (17 s with lite as main,
+56 s with the overloaded Flash main). `--persona nq-02` (Easy Wanderlings, not on Qloo) → grounded 6-date India plan from a
+Prateek Kuhad / Peter Cat Recording Co. / Fleet Foxes audience, with Pune + Mumbai anchors and Ranchi swapped out for
+missing venue data.
 
 | Step | `git add` | Commit message |
 |---|---|---|
-| 3.1 Scoring | `git add apps/api/scoring/ apps/api/tests/test_scoring.py` | `feat(scoring): demand, reach gap and tour routing with tests` |
-| 3.2 Model layer | `git add apps/api/core/llm.py apps/api/tests/test_llm_fallback.py` | `feat(api): Gemini primary with Groq fallback and version logging` |
-| 3.3 Agent graph | `git add apps/api/agent/ apps/api/tests/test_agent.py` | `feat(agent): LangGraph tour agent with checkpoints and grounding validator` |
-| 3.4 Reach ingest | `git add apps/api/agent/nodes/reach.py apps/api/tests/test_reach.py` | `feat(agent): read streaming-dashboard screenshots into reach data` |
-| 3.5 Outputs | `git add apps/api/agent/nodes/outputs.py apps/api/agent/prompts/` | `feat(agent): sponsor pitch, opener DM and CSV/ICS export` |
-| 3.6 Baseline | `git add apps/api/baseline/` | `feat(baseline): LLM-only tour planner for compare mode and evals` |
+| 3.1 MCP fixes found by the agent | `git add packages/tourscout_mcp/src/tourscout_mcp/qloo.py packages/tourscout_mcp/src/tourscout_mcp/geo.py packages/tourscout_mcp/src/tourscout_mcp/tools/demand.py packages/tourscout_mcp/src/tourscout_mcp/tools/artists.py packages/tourscout_mcp/tests/test_geo.py packages/tourscout_mcp/tests/test_tools.py` | `fix(mcp): gravity cell-to-metro mapping, Qloo concurrency cap and whole-list national-act check` |
+| 3.2 API package + scoring | `git add apps/api/pyproject.toml apps/api/uv.lock apps/api/README.md apps/api/tourscout_api/__init__.py apps/api/tourscout_api/scoring/ apps/api/tests/conftest.py apps/api/tests/test_scoring.py` | `feat(scoring): demand, reach gap, city selection and tour routing with tests` |
+| 3.3 Model layer | `git add apps/api/tourscout_api/core/ apps/api/tests/test_llm_fallback.py` | `feat(api): Gemini → lite → Groq model chain with circuit breakers and call logging` |
+| 3.4 Agent building blocks | `git add apps/api/tourscout_api/agent/__init__.py apps/api/tourscout_api/agent/schemas.py apps/api/tourscout_api/agent/toolbox.py apps/api/tourscout_api/agent/reach.py apps/api/tourscout_api/agent/validate.py apps/api/tourscout_api/agent/prompts/ apps/api/tests/test_reach.py apps/api/tests/test_validate.py` | `feat(agent): schemas, prompts, reach ingest and grounding validator` |
+| 3.5 Outputs | `git add apps/api/tourscout_api/agent/outputs.py apps/api/tests/test_outputs.py` | `feat(agent): plan builder, CSV/ICS export, sponsor pitch and opener DM` |
+| 3.6 Agent graph | `git add apps/api/tourscout_api/agent/graph.py apps/api/tourscout_api/agent/runner.py apps/api/tests/test_agent.py` | `feat(agent): LangGraph tour agent with checkpoints, venue swaps, retries and refine` |
+| 3.7 Baseline | `git add apps/api/tourscout_api/baseline/ apps/api/tests/test_baseline.py` | `feat(baseline): LLM-only tour planner for compare mode and evals` |
+| 3.8 CLI | `git add apps/api/tourscout_api/cli.py` | `feat(cli): run personas end to end with checkpoints, refine and compare` |
+| 3.9 Docs | `git add ARCHITECTURE.md PLAN.md docs/qloo-notes.md docs/models.md` | `docs(phase3): scoring, model routing and agent as built, with measured results` |
 
 ---
 

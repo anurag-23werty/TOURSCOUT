@@ -38,3 +38,14 @@ Other Flash models in the listing: `gemini-3.8-flash`, `3.7-flash`, `3.6-flash`,
 ## Budget estimate
 LLM calls per tour plan ≈ intake 1 (lite) + screenshot 0–1 + compose 1–3 + pitch/DM 2–4 (on demand) + refine 1 (lite) ≈ **5–10**.
 Daily plans the free tier supports ≈ RPD(main) ÷ ~6. This sets the per-IP and global caps in Phase 4.
+
+
+## Phase 3 results (29 Oct, real agent runs)
+| Setup | Hovvdy 10-date plan | Notes |
+|---|---|---|
+| default (`gemini-flash-latest` → lite → Groq) | 56 s, grounded | main model 503 / 40 s timeout every run; lite composed the brief |
+| `GEMINI_MAIN_MODEL=gemini-flash-lite-latest` | **17 s**, grounded, 3 LLM calls, 0 failures | recommended while Flash main is overloaded |
+| `LLM_PRIMARY=groq` | 137 s | gpt-oss dropped stops twice; 8k tokens/min forced 19–22 s waits |
+- Groq rejected the full-UUID composer prompt with **HTTP 413**; short aliases fixed it.
+- Groq's server-side `json_schema` check returned 400 "Failed to validate JSON" once → retry in `json_object` mode.
+- `responseJsonSchema` works on Gemini lite (5.8 s for the intake schema).

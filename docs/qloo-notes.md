@@ -159,6 +159,16 @@ opener-locality eval will measure exactly this.
   Jack Antonoff → Bergen County (unknown); NNAMDÏ → Los Angeles (elsewhere ✗, he's a Chicago act: MusicBrainz data, track in the eval).
   MusicBrainz returns 503 "busy" under load → retry with backoff.
 
+## Phase 3 findings (29 Oct, running the agent)
+- **Rate limit:** with ~4+ requests in flight Qloo starts returning 429 (measured: 3 in flight → 0 × 429, 6 → 10 × 429 for 32
+  calls). The client caps concurrency at 4; a 10-city fan-out (~60 calls) takes ~10–15 s uncached.
+- **Heatmap affinity is an over-index, not a fan count.** Big cities have lower affinity (Mumbai 0.56, Delhi 0.70 for an
+  Indian-indie blend) but far more fans; demand multiplies by log10(population).
+- Cell → metro needs **gravity**, not nearest centre: Bengaluru's best cells (affinity 0.94) were going to towns 5 km away.
+- Some chosen cities have **no venue data** (Ranchi, Bhavnagar, Sāngli in India) → the agent now swaps them out.
+- Indian small-city venue/opener data is thin and mainstream (Bollywood singers as "openers"): flag in the eval, prefer
+  big metros for India personas in the demo.
+
 ## Still open → moved to Phase 3 (scoring tuning)
 1. Fit-score weights for openers (0.6/0.4 is a first guess) → tune on the opener-fit eval.
 2. Population weighting for heatmap cells (GeoNames metro population) → check that Athens OH still ranks.

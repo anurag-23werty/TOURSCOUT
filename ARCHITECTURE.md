@@ -112,6 +112,7 @@ flowchart LR
     F1 & F2 & F3 & F4 --> C[8 Compose tour brief<br/>LLM, strict schema, only given IDs]
     C --> V{9 Validate<br/>IDs · numbers · constraints}
     V -- fail, ≤2 retries --> C
+    F -. "a city has no venue data (≤2×)" .-> G
     V -- pass --> O[10 Outputs<br/>plan · city cards · sponsor pitch · opener DMs · export]
     O -. refine: 'skip Texas', 'smaller rooms' .-> RF[Refine router]
     RF --> G
@@ -146,7 +147,17 @@ flowchart LR
 | `validation` | violations, retry count |
 | `trace` | events streamed to the UI |
 
-Checkpointed in Postgres (LangGraph checkpointer), so refinement continues the same run.
+Checkpointed per thread (LangGraph checkpointer: in-memory for the CLI and tests, Postgres in the hosted API from Phase 4),
+so a refine like "skip Detroit" continues the same run from the scoring step.
+
+**As built (Phase 3, `apps/api/tourscout_api/agent/graph.py`):**
+- With `auto_approve` (CLI, evals) both ⏸ checkpoints are decided by the agent; otherwise the run pauses with an
+  `interrupt` payload (`confirm_artist` candidates, `pick_cities` table) and resumes with the user's answer.
+- Not on Qloo → the user's "sounds like" names, or 3–4 names the LLM suggests, each **resolved on Qloo** (only exact matches
+  are kept); the smallest one sets the opener popularity cap.
+- The validator checks ids, numbers and route coverage. After the retries, **salvage** keeps every grounded stop and
+  replaces only the bad ones with the top-ranked automatic pick, so one slip doesn't throw away the whole brief. Dates and
+  order always come from the route, and names/addresses are filled by code from ids.
 
 ---
 
@@ -177,19 +188,31 @@ Heatmap cells are geohash-4 squares (≈ 40 × 20 km). Each has `affinity` (tast
 `popularity` (how much Qloo activity the cell has, 0–1). Affinity alone favours tiny, empty cells (the Prateek Kuhad India map
 ranked remote Ladakh first), so we always weight by size.
 
-1. **Cells → metros:** map each cell to the nearest GeoNames city with population ≥ 100k within 50 km. Metro demand =
-   popularity-weighted mean of cell affinity, plus the summed popularity as an audience-size proxy.
-2. **Demand score** `D = affinity_w × log10(population)`, normalised 0–100 within the region.
-3. **Reach score** `R` (0–100) from the artist's own data: streaming listeners per city (screenshot/CSV) and recency of past shows. Without data, `R = 0` and every city reads as "potential".
-4. **Gap** `= D − R`. Labels:
-   - **Unserved demand**: D high, R low → the headline insight
-   - **Proven**: D high, R high → anchor dates
-   - **Low priority**: D low
-5. **Openers:** rank = `0.6 · fit + 0.4 · local pull`. *fit* = Jaccard overlap of Qloo genre tags with the headliner (a
+1. **Cells → metros** (MCP `geo.py`): GeoNames cities are grouped into metros (suburbs join a bigger city's radius; far
+   college towns stay separate). Each cell joins the metro with the strongest **pull = population / (distance + 5 km)²**
+   within 50 km. (Nearest-centre was tried first and handed Bengaluru's best cells to 70k towns 5 km away.) Per metro:
+   popularity-weighted mean affinity, cell count, summed popularity.
+2. **Demand** `D` (apps/api `scoring/opportunity.py`): affinity is shrunk toward the region mean as if each metro had 2 extra
+   cells at the mean (one cell at affinity 1.0 can't beat Chicago's 40), multiplied by `log10(population)`, then min–max
+   scaled to 0–100 over ~300 candidate metros. Qloo affinity is an *over-index* (taste share), not a fan count, so big
+   cities read lower than their fan base; population restores size, the log keeps mid-sized markets in play.
+3. **Reach** `R = 100 · sqrt(listeners / top city's listeners)`, at least 60 for a city played in the last 12 months. (A log
+   scale rated 300 listeners vs 40k as "proven"; sqrt gives 9.) No data → `R = 0` and the UI says reach is unknown.
+4. **Gap** `= D − R`. Labels, in this order:
+   - **Proven**: R ≥ 50 → anchor dates (the artist's own fans beat the taste model: Mumbai/Pune for an Indian band)
+   - **Low**: D < 35
+   - **Unserved**: D ≥ 60 and gap ≥ 25 → the headline insight
+   - **Potential**: everything else
+5. **Select N cities:** forced includes → up to ⅓ proven anchors by demand → the biggest gaps → top up by demand.
+6. **Openers:** rank = `0.6 · fit + 0.4 · local pull`. *fit* = Jaccard overlap of Qloo genre tags with the headliner (a
    no-location run was tried in Phase 2 and contained none of the local acts); *local pull* = the opener's affinity
-   min-max scaled within the city. MusicBrainz adds +0.15 for "based here" and −0.25 for "based elsewhere". Drop acts flagged *national* (they top ≥ 3 cities: Jack Antonoff did in Phase 1). The MusicBrainz badge says
-   "based here" or "popular here".
-6. **Route:** pick N cities by gap (plus anchors) under constraints, then order them by nearest-neighbour + 2-opt on haversine distance × 1.25 road factor. A leg over `max_drive_km` inserts a day off or drops the city with the lowest gap.
+   min-max scaled within the city. MusicBrainz adds +0.15 for "based here" and −0.25 for "based elsewhere". Acts listed in
+   ≥ 3 cities and ≥ half the tour's cities are *national* and dropped (Jack Antonoff, Jasleen Royal).
+7. **Route** (`scoring/route.py`): nearest-neighbour from home + 2-opt on haversine × 1.25 road factor. A leg over
+   `max_drive_km` gets a travel day; a leg over 2× drops the lowest-priority city; a rest day after every 5 shows; cities
+   are dropped (lowest priority first) until the tour fits the date window. `max_drive_km = 0` means flying: no limit.
+8. **Venue feasibility loop** (agent): if Qloo has no venue data for a chosen city, the agent swaps it for the next best
+   city and re-routes (≤ 2 times). Phase 3: Ranchi was swapped out of the India tour this way.
 
 All formulas live in one module with unit tests. The weights are constants we tune in Phase 7 using the backtest.
 
@@ -199,13 +222,22 @@ All formulas live in one module with unit tests. The weights are constants we tu
 
 | Job | Model | Notes |
 |---|---|---|
-| Agent reasoning, compose, sponsor pitch, outreach DMs | Gemini `gemini-flash-latest` | tool calling + structured output |
-| Intake parsing, refine-router, formatting | Gemini `gemini-flash-lite-latest` | saves main quota; alias confirmed in the model list |
-| Streaming-dashboard screenshot → cities + listeners | Gemini Flash (image input) | structured output; the user confirms the extracted table |
-| Fallback for every text step | Groq `openai/gpt-oss-120b` | on 429 / 503 / quota **or a fast-fail timeout (≈ 8 s, one retry)**. Phase 1: the whole Gemini Flash family returned 503 all day and lite took 21–33 s, while Groq answered tool calls in ~1 s |
+| Compose the brief, sponsor pitch | Gemini `gemini-flash-latest` → `gemini-flash-lite-latest` → Groq | the composer is the one big call: 40 s patience |
+| Intake parsing, refine router, opener DM, sounds-like suggestions | Gemini `gemini-flash-lite-latest` → Groq | |
+| Streaming-dashboard screenshot → cities + listeners | Gemini main → lite (image input) | Groq's gpt-oss is text-only; on failure the UI asks for a CSV |
 | Eval judge | Groq `openai/gpt-oss-120b` | different model family from the generator |
 
-Rules: model names live in config; every trace logs the resolved `modelVersion`; if Gemini is down, the screenshot upload says "enter your top cities instead".
+Rules (`apps/api/tourscout_api/core/llm.py`, hand-written because the failover rules are the point):
+- Every structured answer is validated with Pydantic; invalid JSON counts as a failure and moves to the next model.
+- Per-model **circuit breaker**: a failed model is skipped for 120 s so later calls don't each wait for it.
+- Groq: honour `retry-after` on 429 (free tier = 8k tokens/minute); if its server-side JSON-schema check rejects an
+  answer, retry in plain JSON mode and validate locally.
+- Prompts stay small: the composer sees short aliases (`c1v1`) instead of 36-char Qloo UUIDs (a full-UUID prompt got
+  HTTP 413 from Groq) and the top 3 candidates per category.
+- Every call is logged with provider, model, resolved `modelVersion`, latency and error (`state.llm_calls`).
+- Measured on the Hovvdy persona (29 Oct): `gemini-flash-latest` was overloaded (503 / 40 s timeouts) → 56 s per plan
+  via lite; with `GEMINI_MAIN_MODEL=gemini-flash-lite-latest` → **17 s, 3 LLM calls, 0 failures**; Groq-first → 137 s
+  (it dropped stops and hit the 8k TPM limit).
 
 ---
 

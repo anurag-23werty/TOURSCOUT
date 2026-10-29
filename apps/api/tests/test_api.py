@@ -111,3 +111,8 @@ def test_busy_server_queues_then_gives_a_clear_message() -> None:
         ev = events(c.post("/api/plans", json={"message": HOVVDY_TEXT}))
     assert [k for k, _ in ev] == ["thread", "step", "error"]
     assert ev[1][1]["node"] == "queue" and "very busy" in ev[2][1]["message"]
+
+
+def test_web_origins_ignore_spaces_and_trailing_slashes(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("WEB_ORIGINS", "https://tourscout.vercel.app/ , http://localhost:5173")
+    assert ApiSettings().web_origins == ["https://tourscout.vercel.app", "http://localhost:5173"]

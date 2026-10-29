@@ -227,6 +227,49 @@ Postgres); live: after you deploy.
   - *Designed deterministic demand-gap scoring and routing; backtest showed X% of real tour cities in the top-10 vs Y% for a population baseline.*
   - *Local-opener precision X% vs Y% for an LLM-only baseline (MusicBrainz-verified).*
 
+## Phase 10: Accounts (after the first deploy)
+TourScout becomes a product people come back to: **sign in with Google or email**, with **Continue as guest** kept as an
+equal option (no wall in front of the planner).
+
+**Design**
+- **Neon Auth** (managed Better Auth) on the same Neon project: users live in the `neon_auth` schema next to our tables.
+  Nothing to host; the browser talks to the Neon Auth URL directly.
+- Web: `@neondatabase/auth` client + `@neondatabase/auth-ui` sign-in views. Signed in → `authClient.token()` (15-min
+  EdDSA JWT) sent as `Authorization: Bearer`; guests keep `X-Session-Id`.
+- API: verify the JWT against `<NEON_AUTH_URL>/.well-known/jwks.json` (PyJWT + cryptography, keys cached, `iss`/`aud`
+  checked, EdDSA only). One `Owner` dependency: `user:<sub>` or `guest:<session>`.
+- New `plans` table (thread_id, owner, title, created_at): who owns which run, **in Postgres** instead of memory, so
+  a signed-in user's tours survive restarts and show up on every device.
+- **Claim on sign-in:** plans made as a guest in this browser move to the account.
+- Limits: signed-in users get a higher hourly plan limit than guests (per user, not per IP: fixes shared campus IPs).
+- **My tours** page: list, reopen, rename, delete (delete removes the checkpoint too).
+
+**Steps**
+- [ ] Neon: enable Auth on the branch; enable Google (own OAuth client from Google Cloud) and email/password; set the
+      Vercel URL as a trusted origin; custom SMTP (Resend free tier) for verification and reset emails.
+- [ ] API: `auth.py` (JWKS verify + Owner), `plans` store (Postgres, SQLite locally), claim endpoint, `GET /api/me/plans`,
+      rename/delete, per-user limits. Tests with a locally generated Ed25519 key (no network).
+- [ ] Web: auth client, sign-in/up page, account menu, guest choice, token refresh, My tours page.
+- [ ] Account deletion (removes user's plans) and a short privacy page (what we store: email, name, plans).
+- [ ] Drills: expired token, forged token, another user's plan, guest→user claim, sign-out.
+
+| Step | `git add` | Commit message |
+|---|---|---|
+| 10.1 API auth | `git add apps/api/` | `feat(api): Neon Auth JWT verification, owners and Postgres plan store` |
+| 10.2 My tours API | `git add apps/api/` | `feat(api): my plans, claim guest plans on sign-in, rename/delete, per-user limits` |
+| 10.3 Web sign-in | `git add apps/web/` | `feat(web): Google and email sign-in with guest option, account menu` |
+| 10.4 My tours page | `git add apps/web/` | `feat(web): my tours page` |
+| 10.5 Docs | `git add docs/ ARCHITECTURE.md PLAN.md .env.example render.yaml` | `docs(auth): accounts setup, privacy page and drills` |
+
+**Before inviting real users (not code; decisions and money)**
+| Blocker | Why | Options |
+|---|---|---|
+| **Qloo key is a hackathon key** | Hackathon access is for the event, not a public product | Ask Qloo (Discord / sales) for a startup or commercial key before launch |
+| Free LLM tiers | Groq 200k tokens/day ≈ 25–30 plans; Gemini free quota is per day | Paid Gemini Flash-Lite is cents per plan; keep Groq as fallback |
+| Render free sleeps / 512 MB | Slow first load, one small instance | Render Starter ($7/mo) when people actually use it |
+| Email sending | Neon's shared sender is for testing only | Resend free tier (3k emails/mo) with your own domain |
+| Domain | `*.vercel.app` looks like a demo | A domain (~$10/yr) for the site and the email sender |
+
 ---
 
 ## Scope guard

@@ -116,3 +116,19 @@ def test_busy_server_queues_then_gives_a_clear_message() -> None:
 def test_web_origins_ignore_spaces_and_trailing_slashes(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setenv("WEB_ORIGINS", "https://tourscout.vercel.app/ , http://localhost:5173")
     assert ApiSettings().web_origins == ["https://tourscout.vercel.app", "http://localhost:5173"]
+
+
+@pytest.mark.anyio
+async def test_heartbeat_pings_during_silent_steps_and_keeps_every_event() -> None:
+    import anyio
+
+    from tourscout_api.api.app import with_heartbeat
+
+    async def slow():  # type: ignore[no-untyped-def]
+        yield "event: step\n\n"
+        await anyio.sleep(0.12)  # a silent fan-out
+        yield "event: plan\n\n"
+
+    out = [chunk async for chunk in with_heartbeat(slow(), 0.03)]
+    assert out[0] == "event: step\n\n" and out[-1] == "event: plan\n\n"
+    assert ": ping\n\n" in out and len([c for c in out if c.startswith("event")]) == 2

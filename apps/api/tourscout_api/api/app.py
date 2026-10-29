@@ -18,6 +18,7 @@ Flow for the web app:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -43,6 +44,32 @@ from .settings import ApiSettings
 from .uploads import UploadError, UploadStore
 
 log = logging.getLogger("tourscout.api")
+
+
+async def with_heartbeat(events: AsyncIterator[str], every_s: float) -> AsyncIterator[str]:
+    """Pass SSE chunks through, adding a ": ping" comment whenever nothing was sent for every_s seconds.
+
+    A cold-cache fan-out can be silent for a minute, and proxies on the way cut idle connections (seen on the live
+    prewarm). Browsers and our client ignore comment lines. The pending chunk is awaited, never cancelled, on a ping.
+    """
+    it = events.__aiter__()
+    pending: asyncio.Future[str] | None = None
+    try:
+        while True:
+            pending = pending or asyncio.ensure_future(it.__anext__())
+            done, _ = await asyncio.wait({pending}, timeout=every_s)
+            if not done:
+                yield ": ping\n\n"
+                continue
+            try:
+                chunk = pending.result()
+            except StopAsyncIteration:
+                return
+            pending = None
+            yield chunk
+    finally:
+        if pending and not pending.done():
+            pending.cancel()  # the visitor left mid-run: stop the agent too
 
 
 # ---------------------------------------------------------------- request bodies
@@ -156,7 +183,7 @@ def create_app(agent: TourAgent | None = None, settings: ApiSettings | None = No
             finally:
                 running.release()
 
-        return StreamingResponse(body(), media_type="text/event-stream",
+        return StreamingResponse(with_heartbeat(body(), settings.heartbeat_s), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     async def plan_of(agent_: TourAgent, thread_id: str) -> dict[str, Any]:

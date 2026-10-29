@@ -184,18 +184,28 @@ recall 42% vs 34% for population.
 ---
 
 ## Phase 7: Harden + deploy (Day 19–20)
-- [ ] Dockerfiles; deploy api + mcp to Railway/Fly, web to Vercel, Neon Postgres, Langfuse.
-- [ ] Pre-warm the private cache for demo artists; UptimeRobot on `/health`; no cold starts.
-- [ ] Failure drills: Gemini 503/429 (→ Groq), Qloo slow heatmap/429, artist not found, empty region, huge or odd uploads, prompt injection.
-- [ ] Test in incognito, on a phone, on another network.
+- [x] One Docker image (API + agent + `/mcp`, GeoNames baked in, non-root): 924 MB → **437 MB** with a two-stage build.
+- [x] Postgres for production: pooled Qloo cache + LangGraph checkpoints, tested against a real Postgres (and in CI).
+- [x] Langfuse tracing (trace per run, span per step, generation per LLM call), off without keys.
+- [x] CI: Python + Postgres tests, eval tests, web build, Docker build. Render (`render.yaml`) + Vercel (`vercel.json`) config.
+- [x] Failure drills against the container (`scripts/live_check.py drills`): odd uploads, bad requests, someone else's
+      plan, 10 simultaneous visitors (**10/10 got a plan** after adding a queue; it was 3/10), prompt injection (plan, no leak).
+- [x] Fixes from the drills: a queue instead of "busy" rejections; readable "free-tier limit" message instead of provider
+      errors; a patient intake step; per-IP plan limit 6 → 20 (campus networks share an IP); `/health` checkpointer label.
+- [x] Finding: Groq free tier = 200k tokens/day (~25–30 plans); documented in `docs/models.md`.
+- [ ] **You:** create the Neon, Langfuse, Render, Vercel and UptimeRobot accounts and deploy (`docs/deploy.md`).
+- [ ] Prewarm + drills against the live URL; incognito, phone and other-network checks (`docs/deploy.md` step 7).
 
-**Exit:** the live URL survives 10 rapid sessions and every failure drill degrades gracefully.
+**Exit:** the live URL survives 10 rapid sessions and every failure drill degrades gracefully. Locally ✅ (container +
+Postgres); live: after you deploy.
 
 | Step | `git add` | Commit message |
 |---|---|---|
-| 7.1 Docker | `git add infra/ apps/api/Dockerfile packages/tourscout_mcp/Dockerfile` | `chore(infra): Dockerfiles for api and mcp` |
-| 7.2 CI/CD | `git add .github/workflows/` | `ci: lint, tests and deploy workflows` |
-| 7.3 Hardening | `git add apps/ packages/` | `fix: graceful fallbacks from failure drills` |
+| 7.1 Production storage + tracing | `git add packages/tourscout_mcp/src/tourscout_mcp/cache.py packages/tourscout_mcp/pyproject.toml packages/tourscout_mcp/uv.lock packages/tourscout_mcp/tests/test_qloo.py apps/api/pyproject.toml apps/api/uv.lock apps/api/tourscout_api/core/tracing.py apps/api/tourscout_api/core/checkpoint.py apps/api/tourscout_api/agent/runner.py apps/api/tests/test_agent.py` | `feat(api): pooled Postgres cache, Postgres checkpoints and Langfuse tracing` |
+| 7.2 Hardening from drills | `git add apps/api/tourscout_api/api/app.py apps/api/tourscout_api/api/settings.py apps/api/tourscout_api/agent/graph.py apps/api/tests/test_api.py apps/web/src/format.ts` | `fix(api): queue plans when busy, readable LLM-limit errors, patient intake` |
+| 7.3 Docker + deploy config | `git add infra/api.Dockerfile .dockerignore render.yaml apps/web/vercel.json` | `chore(infra): two-stage Docker image, Render blueprint and Vercel config` |
+| 7.4 CI | `git add .github/workflows/ci.yml` | `ci: Python, Postgres, eval, web and Docker checks` |
+| 7.5 Drills + docs | `git add scripts/live_check.py docs/deploy.md docs/models.md ARCHITECTURE.md .env.example PLAN.md` | `docs(deploy): free-tier deploy guide, failure drills and Groq daily-limit finding` |
 
 ---
 

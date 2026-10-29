@@ -333,20 +333,26 @@ Tourscout/
 
 ```mermaid
 flowchart LR
-    GH[GitHub public repo] --> CI[GitHub Actions<br/>lint · tests · scoring tests · eval smoke]
-    CI --> V[Vercel: web]
-    CI --> RW[Railway / Fly: api + mcp containers]
-    RW --> N[(Neon Postgres)]
-    RW --> LF[Langfuse]
-    UP[UptimeRobot → /health] --> RW
+    GH[GitHub public repo] --> CI[GitHub Actions<br/>Python + Postgres tests · web build · Docker build]
+    GH --> V[Vercel: web app]
+    GH --> R[Render: one Docker container<br/>FastAPI + agent + /mcp]
+    R --> N[(Neon Postgres<br/>checkpoints + private Qloo cache)]
+    R --> LF[Langfuse traces]
+    UP[UptimeRobot → /health every 5 min] --> R
 ```
-No cold starts (judges leave if they see a spinner). Pre-warmed cache for demo artists. Per-IP, per-session and global daily caps protect the Qloo and Gemini quotas.
+
+- One container (`infra/api.Dockerfile`): API, agent and the MCP server mounted at `/mcp`; GeoNames baked in at build time.
+- Free tiers: Render sleeps after 15 idle minutes, so UptimeRobot's 5-minute ping keeps it warm. Fly.io has no free tier
+  for new accounts and Railway only a one-time trial credit; the same Dockerfile runs on both.
+- Neon holds both the LangGraph checkpoints (`DATABASE_URL`) and the Qloo cache (`TOURSCOUT_CACHE_URL`, pooled
+  connections), so restarts and redeploys keep plans and cached demo artists.
+- Click-by-click steps: [`docs/deploy.md`](docs/deploy.md). Before the demo: `scripts/live_check.py prewarm` and `drills`.
 
 ---
 
 ## 12. Quality: guardrails, observability, evals
 - **Guardrails:** schema-validated outputs; ID and number grounding; upload size/type limits; user text treated as data (prompt-injection hygiene).
-- **Observability:** Langfuse spans for every node and tool call; the UI timeline mirrors them.
+- **Observability:** one Langfuse trace per plan run, a span per agent step and a generation per LLM call (model, latency, error); the UI timeline shows the same steps.
 - **Evals** (details in `evals/README.md`):
   1. **Opener locality**: % of suggested openers actually based in that city (MusicBrainz), TourScout vs LLM-only.
   2. **Opener fit**: % of suggested openers smaller than the headliner (Qloo popularity) and in a matching genre.

@@ -49,3 +49,13 @@ Daily plans the free tier supports ≈ RPD(main) ÷ ~6. This sets the per-IP and
 - Groq rejected the full-UUID composer prompt with **HTTP 413**; short aliases fixed it.
 - Groq's server-side `json_schema` check returned 400 "Failed to validate JSON" once → retry in `json_object` mode.
 - `responseJsonSchema` works on Gemini lite (5.8 s for the intake schema).
+
+
+## Phase 7 finding: Groq's daily token limit (29 Oct)
+Groq's free tier for `openai/gpt-oss-120b` has **two** limits: 8,000 tokens/minute **and 200,000 tokens/day**
+(`429 … tokens per day (TPD): Limit 200000, Used 199741`). One plan uses roughly 6–8k tokens, so Groq alone carries about
+25–30 plans a day. A 30-persona eval plus the failure drills used it all. Consequences:
+- Gemini lite is the workhorse (`GEMINI_MAIN_MODEL=gemini-flash-lite-latest` in `render.yaml`); Groq is the safety net.
+- Never run the evals on demo day. Pre-warm the demo artists once (`scripts/live_check.py prewarm`).
+- When every model is out, visitors get "The AI models behind TourScout are at their free-tier limit right now" (no
+  provider errors leak), and the brief step still has its grounded automatic fallback.
